@@ -1,0 +1,7 @@
+data/raw/**
+data/metadata/*.parquet
+logs/**
+!**/.gitkeep
+__pycache__/
+*.pyc
+.env
