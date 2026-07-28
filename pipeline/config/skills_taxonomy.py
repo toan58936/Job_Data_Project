@@ -1,0 +1,63 @@
+from typing import Any
+
+SKILLS_TAXONOMY: dict[str, dict[str, Any]] = {
+    "python": {"canonical": "Python", "aliases": ["Python", "python3", "Python3"]},
+    "java": {"canonical": "Java", "aliases": ["Java", "Core Java"]},
+    "nosql": {"canonical": "NoSQL", "aliases": ["NoSQL", "NoSql", "nosql"]},
+    "sql": {"canonical": "SQL", "aliases": ["SQL", "Sql"]},
+    "database": {"canonical": "Database", "aliases": ["Database", "Databases"]},
+    "mongodb": {"canonical": "MongoDB", "aliases": ["MongoDB", "Mongo"]},
+    "redis": {"canonical": "Redis", "aliases": ["Redis"]},
+    "kotlin": {"canonical": "Kotlin", "aliases": ["Kotlin"]},
+    "clickhouse": {"canonical": "ClickHouse", "aliases": ["Clickhouse", "ClickHouse"]},
+    "aws": {"canonical": "AWS", "aliases": ["AWS", "Amazon Web Services"]},
+    "aws-lambda": {"canonical": "AWS Lambda", "aliases": ["AWS Lambda", "Lambda"]},
+    "aws-glue": {"canonical": "AWS Glue", "aliases": ["AWS Glue", "Glue"]},
+    "pandas": {"canonical": "Pandas", "aliases": ["Pandas"]},
+    "spark": {"canonical": "Spark", "aliases": ["Spark", "Apache Spark"]},
+    "hadoop": {"canonical": "Hadoop", "aliases": ["Hadoop", "Apache Hadoop"]},
+    "hive": {"canonical": "Hive", "aliases": ["Hive", "Apache Hive"]},
+    "scala": {"canonical": "Scala", "aliases": ["Scala"]},
+    "docker": {"canonical": "Docker", "aliases": ["Docker"]},
+    "kubernetes": {"canonical": "Kubernetes", "aliases": ["Kubernetes", "K8s"]},
+    "data-engineer": {"canonical": "Data Engineer", "aliases": ["Data Engineer", "Data Engineering"]},
+    "generative-ai": {"canonical": "Generative AI", "aliases": ["Generative AI", "GenAI", "AI"]},
+    "mlops": {"canonical": "MLOps", "aliases": ["MLOps"]},
+    "data-lineage": {"canonical": "Data Lineage", "aliases": ["Data Lineage"]},
+    "data-privacy": {"canonical": "Data Privacy/Compliance", "aliases": ["Data Privacy/Compliance", "Data Privacy", "Compliance"]},
+    "project-management": {"canonical": "Project Management", "aliases": ["Project Management"]},
+    "troubleshooting": {"canonical": "Troubleshooting", "aliases": ["Troubleshooting"]},
+    "async-programming": {"canonical": "Asynchronous Programming", "aliases": ["Asynchronous Programming", "Async Programming"]},
+    "coroutines": {"canonical": "Coroutines", "aliases": ["Coroutines"]},
+    "olap": {"canonical": "OLAP", "aliases": ["OLAP"]},
+    "suspend-functions": {"canonical": "Suspend Functions", "aliases": ["Suspend Functions"]},
+    "columnar-database": {"canonical": "Columnar Database", "aliases": ["Columnar Database"]},
+    "performance-optimization": {"canonical": "Performance Optimization", "aliases": ["Performance Optimization"]},
+    "distributed-systems": {"canonical": "Distributed Systems", "aliases": ["Distributed Systems"]},
+    "high-traffic": {"canonical": "High Traffic", "aliases": ["High Traffic", "High Throughput"]},
+    "etl": {"canonical": "ETL", "aliases": ["ETL", "ELT"]},
+    "data-warehouse": {"canonical": "Data Warehouse", "aliases": ["Data Warehouse", "Data Warehousing"]},
+    "data-lake": {"canonical": "Data Lake", "aliases": ["Data Lake"]},
+    "presto": {"canonical": "Presto", "aliases": ["Presto"]},
+    "pentaho": {"canonical": "Pentaho", "aliases": ["Pentaho"]},
+    "hbase": {"canonical": "HBase", "aliases": ["HBase"]},
+    "cassandra": {"canonical": "Cassandra", "aliases": ["Cassandra"]},
+}
+
+
+def canonicalize_skill(skill: str) -> str:
+    lowered = skill.strip().lower()
+    for entry in SKILLS_TAXONOMY.values():
+        if lowered in (a.lower() for a in entry["aliases"]):
+            return entry["canonical"]
+    return skill.strip()
+
+
+def build_flashtext_keyword_processor():
+    from flashtext import KeywordProcessor
+
+    kp = KeywordProcessor(case_sensitive=False)
+    for entry in SKILLS_TAXONOMY.values():
+        for alias in entry["aliases"]:
+            kp.add_keyword(alias, entry["canonical"])
+    return kp

@@ -1,4 +1,0 @@
-scrapy>=2.11
-scrapy-playwright
-playwright
-python-dotenv
