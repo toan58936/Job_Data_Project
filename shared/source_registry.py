@@ -18,7 +18,7 @@ SOURCE_REGISTRY = {
         "id_strategy": "url_slug",         # data-search--job-selection-job-slug-value
     },
     "topcv": {
-        "requires_browser": False,
+        "requires_browser": True,
         "has_ajax_preview": False,
         "has_json_data_layer": False,
         "provides_skill_tags": True,       # div.required-tags  verify: dúng là skill, không ph?i benefit

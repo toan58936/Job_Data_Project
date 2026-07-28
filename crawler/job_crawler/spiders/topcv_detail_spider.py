@@ -17,6 +17,8 @@ class TopcvDetailSpider(BaseSpider):
     source_name = "topcv"
     name = "topcv_detail"
 
+    handle_httpstatus_list = [403, 429, 500, 502, 503]
+
     async def start(self):
         listing_path = DATA_RAW_ROOT / self.source_name / self.batch_date / "jobs_meta_listing.jsonl"
         self.logger.info(f"DEBUG start: listing_path={listing_path.resolve()}, exists={listing_path.exists()}")
@@ -58,10 +60,9 @@ class TopcvDetailSpider(BaseSpider):
             self.logger.warning(f"Bỏ qua response thiếu job_id: {response.url}")
             return
 
-        # TopCV thường có h1.title trong trang detail
-        title = response.css("h1.title::text").get()
+        title = response.css("h1.box-header-job__title").xpath("string(.)").get(default="").strip()
         if not title:
-            title = response.css("title::text").get()
+            title = response.css("title::text").get(default="").strip()
 
         item = JobItem()
         item["item_type"] = "detail"

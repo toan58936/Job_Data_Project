@@ -32,10 +32,6 @@ DOWNLOAD_HANDLERS = {
 
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
-EXTENSIONS = {
-    # "job_crawler.extensions.CrawlLogExtension": 500,  # moved to BaseSpider._on_spider_closed
-}
-
 ITEM_PIPELINES = {
     "job_crawler.pipelines.JsonlRouterPipeline": 300,
 }
