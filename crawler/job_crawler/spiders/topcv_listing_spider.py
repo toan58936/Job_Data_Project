@@ -58,7 +58,7 @@ class TopcvListingSpider(BaseSpider):
             item["item_type"] = "listing"
             item["job_id"] = job_id
             item["url"] = title_link.attrib.get("href")
-            item["title"] = title_link.css("::text").get(default="").strip()
+            item["title"] = title_link.css("span::text").get(default="").strip() or title_link.xpath("string(.)").get(default="").strip()
             item["raw_html"] = card.get()
             item["source"] = self.source_name
             item["batch_date"] = self.batch_date

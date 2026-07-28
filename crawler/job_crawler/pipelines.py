@@ -17,7 +17,6 @@ from pathlib import Path
 
 from itemadapter import ItemAdapter
 
-# Point to project root data/ (not crawler/data/) — consistent with job_data_folder_structure.md
 DATA_RAW_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "raw"
 
 FILENAME_BY_TYPE = {
@@ -32,8 +31,19 @@ RAW_HTML_SUBDIR_BY_TYPE = {
 
 class JsonlRouterPipeline:
 
-    def open_spider(self, spider):
-        # preload job_id đã ghi trước đó (nếu spider chạy lại cùng batch_date) để skip trùng
+    @classmethod
+    def from_crawler(cls, crawler):
+        pipeline = cls()
+        pipeline._crawler = crawler
+        return pipeline
+
+    @property
+    def _spider(self):
+        return self._crawler.spider
+
+    def open_spider(self, spider=None):
+        if spider is None:
+            spider = self._spider
         self.seen_job_ids = {"listing": set(), "detail": set()}
         for item_type, filename in FILENAME_BY_TYPE.items():
             path = self._jsonl_path(spider, filename)
@@ -48,7 +58,9 @@ class JsonlRouterPipeline:
                         row = json.loads(line)
                         self.seen_job_ids[item_type].add(row["job_id"])
                     except (json.JSONDecodeError, KeyError):
-                        spider.logger.warning(f"Dòng JSONL hỏng trong {path}, bỏ qua khi preload: {line[:100]}")
+                        spider.logger.warning(
+                            f"Dòng JSONL hỏng trong {path}, bỏ qua khi preload: {line[:100]}"
+                        )
 
     def _batch_dir(self, spider) -> Path:
         d = DATA_RAW_ROOT / spider.source_name / spider.batch_date
@@ -62,32 +74,43 @@ class JsonlRouterPipeline:
         subdir = RAW_HTML_SUBDIR_BY_TYPE[item_type]
         d = self._batch_dir(spider) / "raw_html" / subdir
         d.mkdir(parents=True, exist_ok=True)
-        # job_id có thể chứa ký tự lạ ở nguồn tương lai (dù ITviec slug / TopCV số hiện tại đều an toàn)
         safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(job_id))
         return d / f"{safe_id}.html"
 
-    def process_item(self, item, spider):
+    def process_item(self, item, spider=None):
+        if spider is None:
+            spider = self._spider
         adapter = ItemAdapter(item)
         item_type = adapter.get("item_type")
         job_id = adapter.get("job_id")
 
         if item_type not in FILENAME_BY_TYPE:
-            spider.logger.warning(f"item_type không hợp lệ ({item_type!r}), bỏ qua item job_id={job_id}")
+            spider.logger.warning(
+                f"item_type không hợp lệ ({item_type!r}), bỏ qua item job_id={job_id}"
+            )
             return item
         if not job_id:
-            spider.logger.warning(f"Item thiếu job_id ({item_type}), bỏ qua: {adapter.get('url')}")
+            spider.logger.warning(
+                f"Item thiếu job_id ({item_type}), bỏ qua: {adapter.get('url')}"
+            )
             return item
         if job_id in self.seen_job_ids[item_type]:
-            spider.logger.debug(f"job_id={job_id} đã có trong {item_type}, skip (idempotent rerun).")
+            spider.logger.debug(
+                f"job_id={job_id} đã có trong {item_type}, skip (idempotent rerun)."
+            )
             return item
 
-        # (1) raw_html ra file riêng
         raw_html = adapter.get("raw_html", "") or ""
-        self._raw_html_path(spider, item_type, job_id).write_text(raw_html, encoding="utf-8")
+        self._raw_html_path(spider, item_type, job_id).write_text(
+            raw_html, encoding="utf-8"
+        )
 
-        # (2) metadata (không kèm raw_html) vào đúng JSONL, append-only
         meta = {k: v for k, v in adapter.asdict().items() if k != "raw_html"}
-        with open(self._jsonl_path(spider, FILENAME_BY_TYPE[item_type]), "a", encoding="utf-8") as f:
+        with open(
+            self._jsonl_path(spider, FILENAME_BY_TYPE[item_type]),
+            "a",
+            encoding="utf-8",
+        ) as f:
             f.write(json.dumps(meta, ensure_ascii=False) + "\n")
 
         self.seen_job_ids[item_type].add(job_id)

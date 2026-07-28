@@ -1,0 +1,58 @@
+# ─── Python ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ─── Virtual Environment ────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.virtualenv/
+
+# ─── Environment Variables ──────────────────────────────
+.env
+.env.local
+.env.production
+.env.example
+
+# ─── Scrapy ─────────────────────────────────────────────
+.scrapy/
+
+# ─── Crawled Data (auto-generated) ─────────────────────
+# Keep .gitkeep files via negative pattern
+data/raw/*
+!data/raw/.gitkeep
+data/metadata/*
+!data/metadata/.gitkeep
+
+# ─── Logs ──────────────────────────────────────────────
+logs/
+*.log
+
+# ─── IDE / Editors ─────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Jupyter Notebook Checkpoints ──────────────────────
+.ipynb_checkpoints/
+
+# ─── Playwright / Browser stuff ─────────────────────────
+__pycache__/
+playwright-browsers/
+
+# ─── OS ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+

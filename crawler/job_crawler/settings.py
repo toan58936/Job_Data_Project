@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 BOT_NAME = "job_crawler"
 SPIDER_MODULES = ["job_crawler.spiders"]
 NEWSPIDER_MODULE = "job_crawler.spiders"
 
 # Politeness  d? xu?t ban d?u, CHUA có s? li?u th?t d? xác nh?n (crawler_design_final.md m?c 7)
-ROBOTSTXT_OBEY = False  # t?t d? tránh 403 t? d?ch v? ch?ng bot (b?t l?i khi c?n thi?t)
+ROBOTSTXT_OBEY = True
 AUTOTHROTTLE_ENABLED = True
 CONCURRENT_REQUESTS_PER_DOMAIN = 2
 DOWNLOAD_DELAY = 2  # tuning riêng theo ngu?n ? spider con n?u c?n (ITviec 3-5s do Playwright)
@@ -26,7 +33,7 @@ DOWNLOAD_HANDLERS = {
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 
 EXTENSIONS = {
-    "job_crawler.extensions.CrawlLogExtension": 500,
+    # "job_crawler.extensions.CrawlLogExtension": 500,  # moved to BaseSpider._on_spider_closed
 }
 
 ITEM_PIPELINES = {
