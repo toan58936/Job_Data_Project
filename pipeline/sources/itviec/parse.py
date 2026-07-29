@@ -59,17 +59,16 @@ def _extract_skill_groups(container) -> dict[str, list[str]]:
     }
     current_label: Optional[str] = None
     for node in container.iter():
-        if node.tag == "div":
-            cls = node.get("class") or ""
-            text = (node.text or "").strip()
-            if "w-xl-fixed-100" in cls and text in ("Skills:", "Job Expertise:", "Job Domain:"):
-                if text == "Skills:":
-                    current_label = "skills"
-                elif text == "Job Expertise:":
-                    current_label = "job_expertise"
-                elif text == "Job Domain:":
-                    current_label = "job_domain"
-        elif node.tag == "a" and "itag" in (node.get("class") or ""):
+        cls = node.get("class") or ""
+        text = (node.text or "").strip()
+        if node.tag == "div" and "w-xl-fixed-100" in cls and text in ("Skills:", "Job Expertise:", "Job Domain:"):
+            if text == "Skills:":
+                current_label = "skills"
+            elif text == "Job Expertise:":
+                current_label = "job_expertise"
+            elif text == "Job Domain:":
+                current_label = "job_domain"
+        elif "itag" in cls:
             if current_label:
                 groups[current_label].append(node.text_content().strip())
     return groups
@@ -204,37 +203,37 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
             if match:
                 posted_date_raw = match.group(1).strip()
 
-        for s in tree.xpath('//span[contains(@class, "normal-text") and contains(@class, "text-rich-grey")]'):
-            text = s.text_content().strip()
-            if text in ("At office", "Hybrid", "Remote"):
-                work_mode = _map_work_mode(text)
+        work_mode_nodes = tree.xpath(
+            '//*[contains(text(), "At office") or contains(text(), "Hybrid") or contains(text(), "Remote")]'
+        )
+        for wm_node in work_mode_nodes:
+            wm_text = wm_node.text_content().strip()
+            if wm_text in ("At office", "Hybrid", "Remote"):
+                work_mode = _map_work_mode(wm_text)
                 break
 
         itags = tree.xpath('//a[contains(@class, "itag")]')
         for it in itags:
             skills_required.append(it.text_content().strip())
 
-        company_nodes = tree.xpath(
-            '//a[contains(@href, "/companies/")]/span[contains(@class, "text-rich-grey")]'
-        )
-        if company_nodes:
-            company_name = _extract_text(company_nodes[0])
+        company_nodes = tree.xpath('//a[contains(@href, "/companies/")]')
+        for cn in company_nodes:
+            text = cn.text_content().strip()
+            if text and text not in ("",):
+                company_name = text
+                break
 
         sign_in_nodes = tree.xpath(
-            '//span[contains(text(), "Sign in to view salary")]'
+            '//*[contains(text(), "Sign in to view salary")]'
         )
-        if not sign_in_nodes:
-            sign_in_nodes = tree.xpath(
-                '//a[contains(@class, "sign-in-view-salary")]'
-            )
         if sign_in_nodes:
             salary_status = SalaryStatus.AUTH_GATED
 
-        loc_nodes = tree.xpath('//span[contains(@class, "text-rich-grey")]')
+        loc_nodes = tree.xpath('//*[contains(@class, "text-rich-grey")]')
         seen_locs: set[str] = set()
         for ln in loc_nodes:
             text = ln.text_content().strip()
-            if text and ("-" in text or "Hà Nội" in text or "TP.HCM" in text or "Da Nang" in text or "Hồ Chí Minh" in text):
+            if text and ("-" in text or "Ha Noi" in text or "Hà Nội" in text or "Ho Chi Minh" in text or "Hồ Chí Minh" in text or "TP.HCM" in text or "Da Nang" in text or "Đà Nẵng" in text):
                 for loc in text.split(","):
                     loc = loc.strip()
                     if loc and loc not in seen_locs:
