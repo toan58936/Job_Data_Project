@@ -91,6 +91,9 @@ class ItviecListingSpider(BaseSpider):
                     posted_text = t
                     break
 
+            index_value = card.attrib.get(
+                "data-search--job-selection-job-index-value"
+            )
             item = JobCrawlerItem()
             item["item_type"] = "listing"
             item["job_id"] = job_id
@@ -101,7 +104,9 @@ class ItviecListingSpider(BaseSpider):
             item["source"] = self.source_name
             item["batch_date"] = self.batch_date
             item["listing_page_num"] = page_num
-            item["listing_position"] = None
+            item["listing_position"] = (
+                int(index_value) if index_value is not None else None
+            )
             item["work_mode_raw"] = work_mode
             item["salary_gated"] = salary_gated
             item["posted_text"] = posted_text

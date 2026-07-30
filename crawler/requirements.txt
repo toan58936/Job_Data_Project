@@ -2,3 +2,5 @@ Scrapy>=2.11
 python-dotenv>=1.0
 requests>=2.31
 lxml>=4.9
+scrapy-playwright>=0.0.48
+playwright>=1.61

@@ -12,15 +12,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from shared.utils import safe_id
 from pipeline.model.raw_record import RawRecord
-
-
-def _safe_id(job_id: str) -> str:
-    """PHẢI khớp y hệt hàm cùng tên trong crawler/job_crawler/pipelines.py —
-    đây là 1 trong số ít chỗ crawler và pipeline buộc phải đồng bộ thủ công vì
-    2 bên là 2 package/virtualenv riêng (quyết định v1 mục 3.1). Nếu sửa 1 bên,
-    PHẢI sửa bên kia theo, nếu không sẽ không tìm thấy đúng file HTML đã lưu."""
-    return "".join(c if c.isalnum() or c in "-_" else "_" for c in str(job_id))
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -61,7 +54,7 @@ def merge_raw_records(source: str, batch_date: str, data_root: Path = Path("data
             skipped += 1
             continue
 
-        safe_id = _safe_id(job_id)
+        safe_id = safe_id(job_id)
         listing_html_path = batch_dir / "raw_html" / "listing" / f"{safe_id}.html"
         detail_html_path = batch_dir / "raw_html" / "job_detail" / f"{safe_id}.html"
 

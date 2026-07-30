@@ -1,7 +1,13 @@
 import json
+import sys
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from itemadapter import ItemAdapter
+from shared.utils import safe_id
 
 DATA_RAW_ROOT = (
     Path(__file__).resolve().parent.parent.parent / "data" / "raw"
@@ -68,10 +74,7 @@ class JobCrawlerPipeline:
         subdir = RAW_HTML_SUBDIR_BY_TYPE[item_type]
         d = self._batch_dir(spider) / "raw_html" / subdir
         d.mkdir(parents=True, exist_ok=True)
-        safe_id = "".join(
-            c if c.isalnum() or c in "-_" else "_" for c in str(job_id)
-        )
-        return d / f"{safe_id}.html"
+        return d / f"{safe_id(job_id)}.html"
 
     def process_item(self, item, spider=None):
         if spider is None:

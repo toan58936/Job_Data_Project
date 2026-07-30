@@ -54,7 +54,11 @@ class BaseSpider(scrapy.Spider):
         try:
             stats = spider.crawler.stats.get_stats()
             jobs_found = stats.get("item_scraped_count", 0)
-            jobs_failed = stats.get("spider_exceptions/Exception", 0)
+            http_error_codes = getattr(spider, "handle_httpstatus_list", [])
+            jobs_failed = sum(
+                stats.get(f"downloader/response_status_count/{code}", 0)
+                for code in http_error_codes
+            )
 
             run_id = str(uuid.uuid4())[:8]
             record = {

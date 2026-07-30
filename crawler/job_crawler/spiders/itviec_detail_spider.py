@@ -8,12 +8,18 @@ so that salary data is visible for logged-in users.
 """
 import json
 import logging
+import sys
 from pathlib import Path
 
 import scrapy
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from job_crawler.items import JobCrawlerItem
 from job_crawler.spiders.base_spider import BaseSpider
+from shared.utils import safe_id
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +42,7 @@ class ItviecDetailSpider(BaseSpider):
             yield scrapy.Request(
                 url=url,
                 callback=self.parse_detail,
-                meta={"job_id": job_id},
+                meta={"job_id": job_id, "playwright": True},
                 dont_filter=True,
             )
 
@@ -95,7 +101,7 @@ class ItviecDetailSpider(BaseSpider):
 
     def parse_detail(self, response):
         job_id = response.meta.get("job_id", "unknown")
-        slug = job_id.replace("/", "-") + ".html"
+        slug = safe_id(job_id) + ".html"
         raw_html_dir = (
             PROJECT_ROOT
             / "data"

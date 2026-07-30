@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 
 from scrapy import signals
+from scrapy.exceptions import CloseSpider
 from scrapy.http import Request
 
 logger = logging.getLogger(__name__)
@@ -166,16 +167,6 @@ class LoginMiddleware:
         except (json.JSONDecodeError, OSError) as exc:
             logger.error("Failed to load ITviec cookies: %s", exc)
 
-    def _refresh_session(self):
-        logger.warning(
-            "ITviec session expired — attempting re-login from saved cookies"
-        )
-        self.cookie_dict = {}
-        self.logged_in = False
-        self._load_cookies()
-        if self.logged_in:
-            logger.info("Session refreshed successfully")
-
     def process_request(self, request):
         if self.spider is None or self.spider.name != "itviec_detail":
             return None
@@ -198,21 +189,16 @@ class LoginMiddleware:
             and "sign_in" not in response.url
         ):
             if self.logged_in:
-                logger.warning(
-                    "Detected auth-gated salary on %s — session likely expired",
+                raise CloseSpider(
+                    "Auth-gated salary detected on %s — session expired. "
+                    "Re-run crawler/scripts/login_itviec.py to refresh cookies, "
+                    "then restart the crawl.",
                     response.url,
                 )
-                self._refresh_session()
-                if self.logged_in:
-                    new_request = request.copy()
-                    cookie_str = "; ".join(
-                        f"{k}={v}" for k, v in self.cookie_dict.items()
-                    )
-                    new_request.headers["Cookie"] = cookie_str
-                    return new_request
-                else:
-                    logger.warning(
-                        "Re-login failed after session expiry — falling back "
-                        "to unauthenticated crawl"
-                    )
+            else:
+                logger.warning(
+                    "Detected auth-gated salary on %s — not logged in, "
+                    "crawling unauthenticated",
+                    response.url,
+                )
         return response

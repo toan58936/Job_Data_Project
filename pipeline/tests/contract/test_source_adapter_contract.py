@@ -8,6 +8,7 @@ import pytest
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized
 from shared.source_registry import SOURCE_REGISTRY
+from shared.utils import safe_id
 
 PIPELINE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -69,18 +70,15 @@ def load_fixture(source_name: str, case_name: str) -> RawRecord:
     else:
         raise ValueError(f"Unknown fixture: {source_name}/{case_name}")
 
-    def _safe_id(job_id: str) -> str:
-        return "".join(c if c.isalnum() or c in "-_" else "_" for c in str(job_id))
-
     def _read_html(path: Path) -> str | None:
         if path.exists():
             return path.read_text(encoding="utf-8")
         return None
 
     target_id = listing_row.get("job_id", "")
-    safe_id = _safe_id(target_id)
-    listing_html_path = batch_dir / "raw_html" / "listing" / f"{safe_id}.html"
-    detail_html_path = batch_dir / "raw_html" / "job_detail" / f"{safe_id}.html"
+    html_slug = safe_id(target_id)
+    listing_html_path = batch_dir / "raw_html" / "listing" / f"{html_slug}.html"
+    detail_html_path = batch_dir / "raw_html" / "job_detail" / f"{html_slug}.html"
 
     return RawRecord(
         job_id=target_id,

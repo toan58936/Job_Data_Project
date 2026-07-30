@@ -1,9 +1,9 @@
 """
-SOURCE_REGISTRY  ngu?n s? th?t duy nh?t cho capability t?ng ngu?n.
-M?i giá tr? PH?I kèm evidence (file m?u + ngày verify) khi s?a  nguyên t?c 6.
+SOURCE_REGISTRY  nguồn sự thật duy nhất cho capability mỗi nguồn.
+Mỗi giá trị PHẢI kèm evidence (file mẫu + ngày verify) khi sửa nguyên tắc 6.
 
-Giá tr? du?i dây da verify tr?c ti?p trên HTML th?t (itviec_sample.html,
-itviec_list.html, topcv_sample.html, topcv_list.html)  không ph?i gi? d?nh.
+Giá trị dưới dây đã verify trực tiếp trên HTML thật (itviec_sample.html,
+itviec_list.html, topcv_sample.html, topcv_list.html)  không phải giả định.
 """
 
 SOURCE_REGISTRY = {

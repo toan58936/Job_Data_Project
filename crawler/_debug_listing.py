@@ -10,6 +10,12 @@ import json
 import sys
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from shared.utils import safe_id
+
 
 def debug_listing(batch_date: str):
     batch_dir = (
@@ -81,8 +87,8 @@ def debug_listing(batch_date: str):
     missing_html = []
     for job in listing_jobs:
         job_id = job.get("job_id", "")
-        safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(job_id))
-        html_path = listing_html_dir / f"{safe_id}.html"
+        html_slug = safe_id(job_id)
+        html_path = listing_html_dir / f"{html_slug}.html"
         if not html_path.exists():
             missing_html.append(job_id)
 

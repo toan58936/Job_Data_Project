@@ -8,7 +8,14 @@ BOT_NAME = "job_crawler"
 SPIDER_MODULES = ["job_crawler.spiders"]
 NEWSPIDER_MODULE = "job_crawler.spiders"
 
-ROBOTSTXT_OBEY = False
+ROBOTSTXT_OBEY = False  # TODO: confirm intentional — both sites may block crawlers per robots.txt
+
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+PLAYWRIGHT_BROWSER_TYPE = "chromium"
+PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
 
 DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
