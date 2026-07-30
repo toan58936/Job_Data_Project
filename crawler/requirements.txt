@@ -1,0 +1,4 @@
+Scrapy>=2.11
+python-dotenv>=1.0
+requests>=2.31
+lxml>=4.9
