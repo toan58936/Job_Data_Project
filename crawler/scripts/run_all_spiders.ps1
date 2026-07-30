@@ -1,23 +1,29 @@
-#!/bin/bash
-# run_all_spiders.ps1 — chạy tất cả spiders cho một batch date.
-# Usage (PowerShell): pwsh -File run_all_spiders.ps1 -BatchDate 2026-07-28
-# Usage (bash): bash run_all_spiders.sh 2026-07-28
+param(
+    [Parameter(Mandatory=$false)]
+    [string]$BatchDate = (Get-Date -Format "yyyy-MM-dd")
+)
 
-BATCH_DATE="${1:-2026-07-28}"
-CRAWLER_DIR="$(cd "$(dirname "$0")" && pwd)"
+$ErrorActionPreference = "Stop"
+$CrawlerDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Python = "E:\job-data-project\.venv\Scripts\python.exe"
 
-echo "=== Crawl Phase: Batch $BATCH_DATE ==="
-echo ""
+Write-Host "=== Crawl Phase: Batch $BatchDate ===" -ForegroundColor Cyan
+Write-Host ""
 
-echo "[1/2] Crawling listings (itviec_listing + topcv_listing)..."
-cd "$CRAWLER_DIR"
-E:\job-data-project\.venv\Scripts\python.exe -m scrapy crawl itviec_listing -a batch_date="$BATCH_DATE" -s LOG_LEVEL=INFO
-E:\job-data-project\.venv\Scripts\python.exe -m scrapy crawl topcv_listing -a batch_date="$BATCH_DATE" -s LOG_LEVEL=INFO
+Write-Host "[1/2] Crawling listings..." -ForegroundColor Yellow
+& $Python -m scrapy crawl itviec_listing -a batch_date="$BatchDate" -s LOG_LEVEL=INFO
+if ($LASTEXITCODE -ne 0) { Write-Warning "itviec_listing exited with code $LASTEXITCODE" }
 
-echo ""
-echo "[2/2] Crawling details (itviec_detail + topcv_detail)..."
-E:\job-data-project\.venv\Scripts\python.exe -m scrapy crawl itviec_detail -a batch_date="$BATCH_DATE" -s LOG_LEVEL=INFO
-E:\job-data-project\.venv\Scripts\python.exe -m scrapy crawl topcv_detail -a batch_date="$BATCH_DATE" -s LOG_LEVEL=INFO
+& $Python -m scrapy crawl topcv_listing -a batch_date="$BatchDate" -s LOG_LEVEL=INFO
+if ($LASTEXITCODE -ne 0) { Write-Warning "topcv_listing exited with code $LASTEXITCODE" }
 
-echo ""
-echo "=== Crawl phase complete ==="
+Write-Host ""
+Write-Host "[2/2] Crawling details..." -ForegroundColor Yellow
+& $Python -m scrapy crawl itviec_detail -a batch_date="$BatchDate" -s LOG_LEVEL=INFO
+if ($LASTEXITCODE -ne 0) { Write-Warning "itviec_detail exited with code $LASTEXITCODE" }
+
+& $Python -m scrapy crawl topcv_detail -a batch_date="$BatchDate" -s LOG_LEVEL=INFO
+if ($LASTEXITCODE -ne 0) { Write-Warning "topcv_detail exited with code $LASTEXITCODE" }
+
+Write-Host ""
+Write-Host "=== Crawl phase complete ===" -ForegroundColor Cyan

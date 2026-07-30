@@ -54,9 +54,9 @@ def merge_raw_records(source: str, batch_date: str, data_root: Path = Path("data
             skipped += 1
             continue
 
-        safe_id = safe_id(job_id)
-        listing_html_path = batch_dir / "raw_html" / "listing" / f"{safe_id}.html"
-        detail_html_path = batch_dir / "raw_html" / "job_detail" / f"{safe_id}.html"
+        safe_job_id = safe_id(job_id)
+        listing_html_path = batch_dir / "raw_html" / "listing" / f"{safe_job_id}.html"
+        detail_html_path = batch_dir / "raw_html" / "job_detail" / f"{safe_job_id}.html"
 
         detail_row = detail_by_id.get(job_id)
         detail_crawled = detail_row is not None

@@ -188,21 +188,6 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
     }
 
 
-def _parse_listing_posted_date(raw_html_listing: Optional[str]) -> str:
-    if not raw_html_listing:
-        return ""
-    try:
-        tree = html.fromstring(raw_html_listing)
-        label = tree.xpath('//label[contains(@class, "label-update")]')
-        if label:
-            text = " ".join(label[0].itertext()).strip()
-            text = re.sub(r"(?:Đăng\s+)?", "", text).strip()
-            return text
-    except Exception:
-        pass
-    return ""
-
-
 def parse(raw: RawRecord) -> SourceNormalized:
     if raw.detail_crawled and raw.raw_html_detail:
         data = _parse_detail(raw)

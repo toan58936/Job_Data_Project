@@ -23,9 +23,22 @@ RANDOMIZE_DOWNLOAD_DELAY = True
 CONCURRENT_REQUESTS = 2
 CONCURRENT_REQUESTS_PER_DOMAIN = 2
 
-COOKIES_ENABLED = False
+COOKIES_ENABLED = True
+
+# --- Anti-bot ---
+RETRY_ENABLED = True
+RETRY_TIMES = 3
+RETRY_HTTP_CODES = [403, 429, 500, 502, 503]
+
+USER_AGENT_LIST = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+]
 
 DOWNLOADER_MIDDLEWARES = {
+    "job_crawler.middlewares.RotatingUserAgentMiddleware": 400,
     "job_crawler.middlewares.LoginMiddleware": 543,
 }
 

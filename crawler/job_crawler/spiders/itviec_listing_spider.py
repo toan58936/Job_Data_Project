@@ -61,14 +61,18 @@ class ItviecListingSpider(BaseSpider):
             url = href if href else url_value
 
             # company name
-            company_nodes = card.css(
-                'a[href*="/companies/"] span.text-rich-grey'
-            )
-            company_name = (
-                company_nodes.xpath("string(.)").get(default="").strip()
-                if company_nodes
-                else ""
-            )
+            company_name = ""
+            for sel in [
+                'a[href*="/companies/"] span.text-rich-grey',
+                'a[href*="/companies/"]',
+                'div.company-name a',
+                'span.company-name',
+            ]:
+                company_nodes = card.css(sel)
+                if company_nodes:
+                    company_name = company_nodes.xpath("string(.)").get(default="").strip()
+                    if company_name:
+                        break
 
             # work mode from inline text
             badge_text = " ".join(

@@ -11,6 +11,7 @@ show as AUTH_GATED).
 """
 import json
 import logging
+import random
 from pathlib import Path
 
 from scrapy import signals
@@ -104,6 +105,21 @@ def login_via_playwright(email: str, password: str) -> bool:
         return False
 
 
+class RotatingUserAgentMiddleware:
+    """Chọn ngẫu nhiên User-Agent từ danh sách cho mỗi request."""
+
+    def __init__(self, user_agents):
+        self.user_agents = user_agents
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        return cls(crawler.settings.getlist("USER_AGENT_LIST", []))
+
+    def process_request(self, request, spider):
+        if self.user_agents:
+            request.headers["User-Agent"] = random.choice(self.user_agents)
+
+
 class LoginMiddleware:
     """Middleware that attaches pre-saved ITviec session cookies to
     Scrapy requests.  The cookies must be saved to disk first (see
@@ -172,10 +188,7 @@ class LoginMiddleware:
             return None
         if not self.logged_in or not self.cookie_dict:
             return None
-        cookie_str = "; ".join(
-            f"{k}={v}" for k, v in self.cookie_dict.items()
-        )
-        request.headers["Cookie"] = cookie_str
+        request.cookies = self.cookie_dict
         return None
 
     def process_response(self, request, response):

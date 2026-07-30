@@ -1,6 +1,6 @@
 from typing import Any
 
-from pipeline.config.skills_taxonomy import SKILLS_TAXONOMY, canonicalize_skill
+from pipeline.config.skills_taxonomy import SKILLS_TAXONOMY
 
 
 def _build_alias_lower_map() -> dict[str, str]:

@@ -7,9 +7,20 @@ Selector verify trực tiếp trên topcv_list.html:
 
 Pagination: ?page=N, dừng khi 1 trang trả về 0 card.
 """
+from urllib.parse import parse_qs, urlparse, urlunparse, urlencode
+
 import scrapy
 from job_crawler.spiders.base_spider import BaseSpider
 from job_crawler.items import JobCrawlerItem
+
+TRACKING_PARAMS = {"ta_source", "u_sr_id"}
+
+
+def _strip_tracking_params(url: str) -> str:
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+    clean_params = {k: v for k, v in params.items() if k not in TRACKING_PARAMS}
+    return urlunparse(parsed._replace(query=urlencode(clean_params, doseq=True), fragment=""))
 
 
 class TopcvListingSpider(BaseSpider):
@@ -52,7 +63,7 @@ class TopcvListingSpider(BaseSpider):
             item = JobCrawlerItem()
             item["item_type"] = "listing"
             item["job_id"] = job_id
-            item["url"] = title_link.attrib.get("href", "")
+            item["url"] = _strip_tracking_params(title_link.attrib.get("href", ""))
             item["title"] = (
                 title_link.css("span::text").get(default="").strip()
                 or title_link.xpath("string(.)").get(default="").strip()

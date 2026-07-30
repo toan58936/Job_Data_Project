@@ -38,6 +38,7 @@ class JobCrawlerPipeline:
         if spider is None:
             spider = self._spider
         self.seen_job_ids = {"listing": set(), "detail": set()}
+        self._stats = {"new": 0, "skipped_dup": 0, "skipped_invalid": 0}
         for item_type, filename in FILENAME_BY_TYPE.items():
             path = self._jsonl_path(spider, filename)
             if not path.exists():
@@ -103,6 +104,7 @@ class JobCrawlerPipeline:
                 job_id,
                 item_type,
             )
+            self._stats["skipped_dup"] += 1
             return item
 
         raw_html = adapter.get("raw_html", "") or ""
@@ -119,4 +121,15 @@ class JobCrawlerPipeline:
             f.write(json.dumps(meta, ensure_ascii=False) + "\n")
 
         self.seen_job_ids[item_type].add(job_id)
+        self._stats["new"] += 1
         return item
+
+    def close_spider(self, spider=None):
+        if spider is None:
+            spider = self._spider
+        spider.logger.info(
+            "[Pipeline] Stats: new=%d, skipped_dup=%d, skipped_invalid=%d",
+            self._stats["new"],
+            self._stats["skipped_dup"],
+            self._stats["skipped_invalid"],
+        )
