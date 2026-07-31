@@ -302,7 +302,7 @@ def test_adapter_conforms(source_name):
 
 ---
 
-## 4. Bảng field — trạng thái hiện tại (core / ứng viên / extension-only)
+## 4. Bảng field (core / ứng viên / extension-only)
 
 | Field | Trạng thái | Ghi chú |
 |---|---|---|
@@ -311,59 +311,3 @@ def test_adapter_conforms(source_name):
 | `experience_years_min` | **Ứng viên core** | TopCV structured, ITviec cần regex fallback — chưa đủ bằng chứng thật để tốt nghiệp |
 | `application_deadline` (TopCV), `job_domain`/`company_type`/`overtime_policy` (ITviec), badge công ty (TopCV) | `source_extra` only | Chỉ 1 nguồn — chưa đủ điều kiện lên core |
 | `competition_level` (TopCV) | **Nghi ngờ, chưa dùng** | Có thể là số cá nhân hoá theo tài khoản login, không phải thuộc tính tĩnh của job — cần xác nhận trước khi crawl |
-
----
-
-## 5. Pipeline — trạng thái ổn định (đã cập nhật theo tiến độ thật, không phải kế hoạch)
-
-### ✅ Đã code + test thật (không chỉ thiết kế trên giấy)
-- `model/raw_record.py` — schema `RawRecord`, test thật trên dữ liệu TopCV
-- `model/source_normalized.py` — 2 tầng core/`source_extra`, đã có `work_mode` (tốt nghiệp), test tạo instance + validate lỗi thiếu field bắt buộc
-- `model/source_interface.py` — `SourceAdapter` **[ĐÃ ĐỔI]** chỉ còn 1 method `parse()`, bỏ `extract()` khỏi contract vì `merge.py` đã xử lý việc đọc crawler output theo cách hoàn toàn source-agnostic, không cần khai báo riêng theo nguồn nữa
-- `pipeline_steps/merge.py` — join `jobs_meta_listing.jsonl` + `jobs_meta_detail_status.jsonl` theo `job_id`, test thật trên TopCV batch `2026-07-28`: ra đúng 55 record, 18 có detail, graceful với job chưa crawl detail
-- `shared/source_registry.py` — capability đã verify, không phải giả định
-
-### 🟡 Đã thiết kế logic trên giấy — CHƯA viết file thật
-- `config/skills_taxonomy.py` — chưa có file, chỉ mới liệt kê vài skill thật đã thấy
-- `tools/skill_extractor.py` — logic rẽ nhánh đã thiết kế đúng (mục 3.5), chưa code
-- `sources/topcv/parse.py`, `sources/itviec/parse.py` — chưa code
-- `tests/contract/test_source_adapter_contract.py` — chưa code
-
-### 🔴 Chưa thiết kế — chỉ là tên file, chưa có logic
-
-| Module | Vấn đề cụ thể |
-|---|---|
-| `shared_validate.py` | Mới có 1 rule (salary null hợp lệ nếu `salary_can_be_gated`). Chưa có rule cho `title`/`company_name` rỗng, `url` sai format |
-| `shared_clean.py`, `shared_normalize.py`, `shared_salary_convert.py` | Chưa thiết kế gì — chỉ tên file |
-| `cross_source_dedupe.py` | MinHash chọn từ v1 nhưng chưa stress-test dữ liệu thật — câu hỏi D.12 (tỷ lệ trùng thực tế) vẫn treo, ảnh hưởng threshold similarity |
-| `store/` | Chưa quyết cách ghi `jobs_current` vs `jobs_log` khi cùng `job_id` xuất hiện ở nhiều batch; `schema.sql` mới ghi chú cần version `source_extra` struct, chưa có cách làm cụ thể |
-| `title_classifier.py`, `flag_extractor.py` | Chưa thiết kế gì — cần bạn xác nhận tiêu chí phân loại trước khi thiết kế |
-| `orchestrator/run_pipeline.py` | Chưa quyết sequencing — step nào chặn step nào khi lỗi, retry ở đâu |
-
-**Điểm nghẽn kế tiếp:** không còn là `merge.py` (đã xong) — giờ là `skills_taxonomy.py` + `skill_extractor.py`, vì `sources/{source}/parse.py` không viết được nếu thiếu 2 file này (parse.py cần gọi `skill_extractor.py` để điền `source_extra`).
-
----
-
-## 6. Câu hỏi mở — chờ phân tích thêm
-
-*(Ghi lại nguyên trạng để tiếp tục phân tích ở lượt sau, chưa ảnh hưởng tới cấu trúc ở trên cho tới khi có câu trả lời)*
-
-### A. Xác nhận cấu trúc field (cần crawl thêm mẫu, không chỉ 1 job/nguồn)
-1. ~~`work_mode` của TopCV — job Remote/Hybrid có ghi đúng nhãn `Hình thức làm việc` không?~~ **[ĐÃ TRẢ LỜI]** Có — verify trên `job_id=1055808` thật: `"Hình thức làm việc: Làm việc tại văn phòng / Onsite"`. Đã promote lên core (mục 3.3, 4).
-2. ~~`skill_tag_structure` của TopCV có luôn đủ 3 nhóm không?~~ **[ĐÃ TRẢ LỜI]** Không — `job_id=1055808` chỉ có `"Kỹ năng cần có"`, thiếu 2 nhóm còn lại. `parse.py` phải tolerant (đã ghi ở mục 3.2, 3.5).
-3. `has_json_data_layer` của ITviec có ổn định qua nhiều job không — hay có job thiếu attribute này? *(vẫn mở — mới verify 2/nhiều job)*
-4. `salary_status = AUTH_GATED` chiếm tỷ lệ bao nhiêu % job ITviec — có đáng đầu tư crawl có đăng nhập? *(vẫn mở)*
-
-### B. Field đặc thù nguồn — cần xác nhận trước khi đưa vào `source_extra`
-5. Company badges của TopCV (Diamond/Pro/Verified) — gắn với công ty hay gắn với tin đăng cụ thể?
-6. `overtime_policy`/`working_days` của ITviec — xuất hiện ở mọi job hay chỉ 1 số công ty tự nguyện điền?
-7. `competition_level` của TopCV — chỉ ẩn khi chưa login, hay thực sự không tồn tại ở HTML public?
-
-### C. Phạm vi mở rộng nguồn — quyết định mức độ tổng quát của `SourceAdapter`
-8. Nguồn thứ 3 dự kiến là gì — site HTML thuần hay site có API/JSON response (cần mở interface `extract()` để nhận cả raw JSON, không chỉ HTML)?
-9. Nguồn tương lai có cần đăng nhập để xem đủ dữ liệu không — nếu có, cần session/cookie management trong `crawler/`.
-10. Có nguồn tiếng Anh/quốc tế không — ảnh hưởng `title_rules.py`/`skills_taxonomy.py` có cần tách theo ngôn ngữ.
-
-### D. Vận hành / chất lượng dữ liệu
-11. Tần suất đổi cấu trúc HTML của 2 site — có đáng ưu tiên JSON data-layer làm nguồn chính hơn CSS selector ngay từ đầu?
-12. Trùng lặp cross-source thực tế nhiều tới đâu (đặc biệt job từ agency như "ITviec Recruitment Consulting") — ảnh hưởng độ ưu tiên đầu tư cho `cross_source_dedupe.py`.

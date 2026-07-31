@@ -11,8 +11,6 @@ from types import SimpleNamespace
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
 from pipeline.tools.date_parser import parse_vietnamese_date
-from pipeline.tools.skill_extractor import canonicalize_skills_list, extract_skills
-from shared.source_registry import SOURCE_REGISTRY
 
 
 class _SalaryInfo(BaseModel):
@@ -159,9 +157,9 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         json_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
 
     source_extra: dict[str, Any] = {
-        "skills": canonicalize_skills_list(json_skills),
-        "job_expertise": canonicalize_skills_list(skill_groups["job_expertise"]),
-        "job_domain": canonicalize_skills_list(skill_groups["job_domain"]),
+        "skills_raw": json_skills,
+        "job_expertise_raw": skill_groups["job_expertise"],
+        "job_domain_raw": skill_groups["job_domain"],
     }
 
     salary_text = ""
@@ -256,9 +254,9 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
         "salary_max": None,
         "posted_date_raw": posted_date_raw,
         "source_extra": {
-            "skills": canonicalize_skills_list(skills_required),
-            "job_expertise": [],
-            "job_domain": [],
+            "skills_raw": skills_required,
+            "job_expertise_raw": [],
+            "job_domain_raw": [],
         },
     }
 
@@ -283,15 +281,7 @@ def parse(raw: RawRecord) -> SourceNormalized:
     batch_date = datetime.strptime(raw.batch_date, "%Y-%m-%d").date()
     posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date)
 
-    record = SimpleNamespace(
-        description_raw=data.get("description_raw", ""),
-        source_extra=data["source_extra"],
-    )
-    registry_entry = SOURCE_REGISTRY.get(raw.source, {})
-    extracted = extract_skills(record, registry_entry)
-    data["source_extra"]["skills_all"] = extracted["skills_all"]
-    data["source_extra"]["skills_required"] = extracted["skills_required"]
-    data["source_extra"]["skills_nice_to_have"] = extracted["skills_nice_to_have"]
+
     if posted_date_parsed:
         data["source_extra"]["posted_date_parsed"] = posted_date_parsed.isoformat()
 

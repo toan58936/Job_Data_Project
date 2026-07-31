@@ -1,7 +1,7 @@
 from typing import Any, Optional
 
 from pipeline.config.skills_taxonomy import SKILLS_TAXONOMY
-
+from pipeline.tools.vocab_gap_logger import log_unrecognized_skill
 
 def _build_alias_lower_map() -> dict[str, str]:
     alias_map: dict[str, str] = {}
@@ -45,19 +45,22 @@ def _get_keyword_processor():
     return _KEYWORD_PROCESSOR
 
 
-def canonicalize_skill(skill: str) -> str:
+def canonicalize_skill(skill: str, source: str, job_id: str) -> Optional[str]:
     lowered = skill.strip().lower()
     if lowered in _ALIAS_LOWER_MAP:
         return _ALIAS_LOWER_MAP[lowered]
-    return skill.strip()
+    
+    # Unrecognized skill -> log it and drop it from the clean list
+    log_unrecognized_skill(skill, source, job_id)
+    return None
 
 
-def canonicalize_skills_list(skills: list[str]) -> list[str]:
+def canonicalize_skills_list(skills: list[str], source: str, job_id: str) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for s in skills:
-        c = canonicalize_skill(s)
-        if c not in seen:
+        c = canonicalize_skill(s, source, job_id)
+        if c and c not in seen:
             seen.add(c)
             result.append(c)
     return result
@@ -67,14 +70,17 @@ def _extract_skills_from_tags(record: Any, structure: Optional[str]) -> dict:
     """Đọc skill từ tag có cấu trúc trong source_extra (nếu nguồn có hỗ trợ và
     bản ghi này thực sự có điền tag). Trả về rỗng nếu không tìm thấy gì — KHÔNG
     coi đó là lỗi, để _extract_skills_from_text() xử lý tiếp."""
+    source = record.source
+    job_id = record.job_id
+    
     if structure == "flat":
-        raw_skills = record.source_extra.get("skills", [])
-        deduped = canonicalize_skills_list(raw_skills)
+        raw_skills = record.source_extra.get("skills_raw", [])
+        deduped = canonicalize_skills_list(raw_skills, source, job_id)
         return {"skills_all": deduped, "skills_required": deduped, "skills_nice_to_have": []}
 
     if structure == "grouped":
-        req = canonicalize_skills_list(record.source_extra.get("skills_required", []))
-        nice = canonicalize_skills_list(record.source_extra.get("skills_nice_to_have", []))
+        req = canonicalize_skills_list(record.source_extra.get("skills_required_raw", []), source, job_id)
+        nice = canonicalize_skills_list(record.source_extra.get("skills_nice_to_have_raw", []), source, job_id)
         return {
             "skills_all": list(dict.fromkeys(req + nice)),
             "skills_required": req,
