@@ -19,6 +19,17 @@ _ALIAS_LOWER_MAP = _build_alias_lower_map()
 # bản ghi rơi vào nhánh fallback. Với batch vài trăm/nghìn job, đây là chi phí CPU
 # lặp lại vô ích cho cùng 1 kết quả. Build 1 lần, dùng lại cho toàn batch.
 _KEYWORD_PROCESSOR = None
+_NOISE_SKILLS = {
+    "English",
+    "Team Management",
+    "Fresher Accepted",
+    "Project Management",
+    "Stakeholder management",
+    "Communication",
+    "Leadership",
+    "Soft Skills",
+    "Analytical Skills",
+}
 
 
 def _get_keyword_processor():
@@ -76,7 +87,10 @@ def _extract_skills_from_tags(record: Any, structure: Optional[str]) -> dict:
 def _extract_skills_from_text(record: Any) -> dict:
     """Fallback: dò từ khoá kỹ năng (flashtext, theo SKILLS_TAXONOMY) trực tiếp
     trong description_raw + requirements_raw (nếu nguồn có field này trong
-    source_extra — TopCV có, không phải nguồn nào cũng có nên dùng .get())."""
+    source_extra — TopCV có, không phải nguồn nào cũng có nên dùng .get()).
+
+    Chỉ filter case-sensitive cho exact alias "AI" (2 ký tự), không tác động lên
+    các alias dài khác như "Generative AI"/"GenAI"."""
     kp = _get_keyword_processor()
 
     text_parts = [record.description_raw or ""]
@@ -88,32 +102,39 @@ def _extract_skills_from_text(record: Any) -> dict:
     if not text.strip():
         return {"skills_all": [], "skills_required": [], "skills_nice_to_have": []}
 
-    raw_skills = kp.extract_keywords(text)
-    deduped = list(dict.fromkeys(raw_skills))  # extract_keywords đã trả canonical form sẵn
+    matches = kp.extract_keywords(text, span_info=True)
+    filtered: list[str] = []
+    for canonical, start, end in matches:
+        span = text[start:end]
+        if len(span) == 2 and span != "AI":
+            continue
+        filtered.append(canonical)
+
+    deduped = list(dict.fromkeys(filtered))
+    deduped = [skill for skill in deduped if skill not in _NOISE_SKILLS]
     return {"skills_all": deduped, "skills_required": deduped, "skills_nice_to_have": []}
 
 
 def extract_skills(record: Any, registry_entry: dict) -> dict:
     """Trích skill cho 1 bản ghi SourceNormalized.
 
-    THAY ĐỔI QUAN TRỌNG so với bản trước: quyết định "dùng tag hay dùng
-    keyword-fallback" giờ được đánh giá THEO TỪNG BẢN GHI (dựa trên nội dung
-    source_extra thực tế của chính bản ghi đó), KHÔNG dùng cờ
-    registry_entry["provides_skill_tags"] cấp nguồn như trước.
-
-    Lý do (bằng chứng từ dữ liệu thật, batch topcv 2026-07-31, 59 bản ghi):
-    TopCV CÓ hỗ trợ tag skill có cấu trúc ở cấp tính năng, nhưng 62% job đăng
-    trên TopCV không thực sự dùng tính năng đó khi đăng tin — nếu chỉ dựa vào
-    1 cờ boolean cấp nguồn, 62% dữ liệu này sẽ luôn có skills_required rỗng dù
-    97% trong số đó thực ra có nhắc kỹ năng trong mô tả/yêu cầu dạng văn xuôi.
-
-    Logic: luôn thử tag trước (rẻ, chính xác cao khi có) → nếu rỗng, fallback
-    sang dò từ khoá trong text (rẻ hơn train NER, đủ dùng ở giai đoạn hiện tại).
+    Luôn chạy cả nhánh tag và text, rồi union lại. Tag được ưu tiên cho phân loại
+    required / nice-to-have, còn text chỉ bổ sung khi tag rỗng hoặc thiếu phần nào.
     """
     structure = registry_entry.get("skill_tag_structure")
 
     tag_based = _extract_skills_from_tags(record, structure)
-    if tag_based["skills_all"]:
-        return tag_based
+    text_based = _extract_skills_from_text(record)
 
-    return _extract_skills_from_text(record)
+    skills_all = list(dict.fromkeys(tag_based["skills_all"] + text_based["skills_all"]))
+    skills_required = tag_based["skills_required"]
+    skills_nice_to_have = tag_based["skills_nice_to_have"]
+
+    if not skills_required and not skills_nice_to_have and not tag_based["skills_all"]:
+        skills_required = text_based["skills_all"]
+
+    return {
+        "skills_all": skills_all,
+        "skills_required": skills_required,
+        "skills_nice_to_have": skills_nice_to_have,
+    }

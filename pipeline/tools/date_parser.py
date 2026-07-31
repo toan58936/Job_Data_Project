@@ -17,15 +17,26 @@ _APPROX_DAYS_PER_MONTH = 30
 _APPROX_DAYS_PER_YEAR = 365
 
 _RELATIVE_UNIT_TO_DAYS = {
-    "giờ": 0,   # cùng ngày crawl, không lùi ngày (không cần độ chính xác cấp giờ)
+    "giờ": 0,
+    "hour": 0,
+    "hours": 0,
     "ngày": 1,
+    "day": 1,
+    "days": 1,
     "tuần": 7,
+    "week": 7,
+    "weeks": 7,
     "tháng": _APPROX_DAYS_PER_MONTH,
+    "month": _APPROX_DAYS_PER_MONTH,
+    "months": _APPROX_DAYS_PER_MONTH,
     "năm": _APPROX_DAYS_PER_YEAR,
+    "year": _APPROX_DAYS_PER_YEAR,
+    "years": _APPROX_DAYS_PER_YEAR,
 }
 
 _RELATIVE_PATTERN = re.compile(
-    r"(\d+)\s*(giờ|ngày|tuần|tháng|năm)\s*trước", re.IGNORECASE
+    r"(\d+)\s*(giờ|hour|hours|ngày|day|days|tuần|week|weeks|tháng|month|months|năm|year|years)\s*(?:ago|trước)?",
+    re.IGNORECASE,
 )
 
 _ABSOLUTE_PATTERN = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
@@ -40,9 +51,9 @@ def parse_relative_vietnamese(text: str, reference_date: date) -> Optional[date]
         return None
     cleaned = text.strip().lower()
 
-    if cleaned in ("hôm nay", "vừa xong", "mới đăng"):
+    if cleaned in ("hôm nay", "today", "vừa xong", "mới đăng"):
         return reference_date
-    if cleaned == "hôm qua":
+    if cleaned in ("hôm qua", "yesterday"):
         return reference_date - timedelta(days=1)
 
     match = _RELATIVE_PATTERN.search(cleaned)
@@ -50,7 +61,9 @@ def parse_relative_vietnamese(text: str, reference_date: date) -> Optional[date]
         return None
 
     amount = int(match.group(1))
-    unit = match.group(2)
+    unit = match.group(2).lower()
+    if unit in {"giờ", "hour", "hours"}:
+        return reference_date
     days = amount * _RELATIVE_UNIT_TO_DAYS[unit]
     return reference_date - timedelta(days=days)
 

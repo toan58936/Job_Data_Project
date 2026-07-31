@@ -1,13 +1,18 @@
 import json
 import re
+from datetime import datetime
 from typing import Any, Optional
 
 from lxml import html
 from pydantic import BaseModel
 
+from types import SimpleNamespace
+
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
-from pipeline.tools.skill_extractor import canonicalize_skills_list
+from pipeline.tools.date_parser import parse_vietnamese_date
+from pipeline.tools.skill_extractor import canonicalize_skills_list, extract_skills
+from shared.source_registry import SOURCE_REGISTRY
 
 
 class _SalaryInfo(BaseModel):
@@ -274,6 +279,22 @@ def parse(raw: RawRecord) -> SourceNormalized:
     else:
         data = _parse_listing(raw)
 
+    posted_date_raw = data.get("posted_date_raw", "")
+    batch_date = datetime.strptime(raw.batch_date, "%Y-%m-%d").date()
+    posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date)
+
+    record = SimpleNamespace(
+        description_raw=data.get("description_raw", ""),
+        source_extra=data["source_extra"],
+    )
+    registry_entry = SOURCE_REGISTRY.get(raw.source, {})
+    extracted = extract_skills(record, registry_entry)
+    data["source_extra"]["skills_all"] = extracted["skills_all"]
+    data["source_extra"]["skills_required"] = extracted["skills_required"]
+    data["source_extra"]["skills_nice_to_have"] = extracted["skills_nice_to_have"]
+    if posted_date_parsed:
+        data["source_extra"]["posted_date_parsed"] = posted_date_parsed.isoformat()
+
     return SourceNormalized(
         job_id=raw.job_id,
         source=raw.source,
@@ -282,7 +303,7 @@ def parse(raw: RawRecord) -> SourceNormalized:
         company_name=data["company_name"],
         locations=data["locations"],
         description_raw=data["description_raw"],
-        posted_date_raw=data.get("posted_date_raw", ""),
+        posted_date_raw=posted_date_raw,
         salary_status=data["salary_status"],
         salary_min=data["salary_min"],
         salary_max=data["salary_max"],

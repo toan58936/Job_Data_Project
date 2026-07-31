@@ -4,10 +4,13 @@ from datetime import datetime
 from lxml import html
 from pydantic import BaseModel
 
+from types import SimpleNamespace
+
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
-from pipeline.tools.skill_extractor import canonicalize_skills_list
+from pipeline.tools.skill_extractor import canonicalize_skills_list, extract_skills
 from pipeline.tools.date_parser import parse_vietnamese_date
+from shared.source_registry import SOURCE_REGISTRY
 # TopCV job pages không có <meta charset="utf-8">, nên lxml phải tự đoán encoding.
 # Khi input là bytes (ví dụ đọc lại raw HTML từ Bronze storage), việc đoán sai encoding
 # sẽ biến toàn bộ text tiếng Việt thành mojibake (VD: "Công ty" -> "CÃ´ng ty").
@@ -294,6 +297,16 @@ def parse(raw: RawRecord) -> SourceNormalized:
     source_extra = data["source_extra"]
     if posted_date_parsed:
         source_extra["posted_date_parsed"] = posted_date_parsed.isoformat()
+
+    record = SimpleNamespace(
+        description_raw=data.get("description_raw", ""),
+        source_extra=source_extra,
+    )
+    registry_entry = SOURCE_REGISTRY.get(raw.source, {})
+    extracted = extract_skills(record, registry_entry)
+    source_extra["skills_all"] = extracted["skills_all"]
+    source_extra["skills_required"] = extracted["skills_required"]
+    source_extra["skills_nice_to_have"] = extracted["skills_nice_to_have"]
 
     return SourceNormalized(
         job_id=raw.job_id,
