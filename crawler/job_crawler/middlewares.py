@@ -215,3 +215,12 @@ class LoginMiddleware:
                     response.url,
                 )
         return response
+
+
+# ========== THÊM MIDDLEWARE MỚI ==========
+class ForcePlaywrightMiddleware:
+    """Thêm playwright=True vào mọi request của spider topcv_listing và topcv_detail"""
+    def process_request(self, request, spider):
+        if spider.name in ["topcv_listing", "topcv_detail"]:
+            request.meta.setdefault("playwright", True)
+        return None

@@ -40,6 +40,7 @@ USER_AGENT_LIST = [
 DOWNLOADER_MIDDLEWARES = {
     "job_crawler.middlewares.RotatingUserAgentMiddleware": 400,
     "job_crawler.middlewares.LoginMiddleware": 543,
+    "job_crawler.middlewares.ForcePlaywrightMiddleware": 550,  # <--- THÊM DÒNG NÀY
 }
 
 ITEM_PIPELINES = {
