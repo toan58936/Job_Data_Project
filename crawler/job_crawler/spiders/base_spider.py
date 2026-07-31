@@ -54,11 +54,29 @@ class BaseSpider(scrapy.Spider):
         try:
             stats = spider.crawler.stats.get_stats()
             jobs_found = stats.get("item_scraped_count", 0)
-            http_error_codes = getattr(spider, "handle_httpstatus_list", [])
+
+            # [SỬA — bug xác nhận qua crawl_log.jsonl thật, batch 2026-07-31]
+            # Bản cũ: http_error_codes = getattr(spider, "handle_httpstatus_list", [])
+            # Không spider nào set attribute này (nó là khái niệm KHÁC: cho phép response lỗi
+            # đi tới callback parse(), không phải "danh sách mã lỗi cần đếm") → luôn là [] →
+            # jobs_failed LUÔN = 0 dù crawl fail thật. Bằng chứng: detail run batch 2026-07-31
+            # báo "jobs_found: 47, jobs_failed: 0, status: success" trong khi listing cùng batch
+            # tìm 66-68 job — gần 20 job biến mất không dấu vết.
+            #
+            # Sửa đúng: đếm theo RETRY_HTTP_CODES (cấu hình thật trong settings.py, khớp với mã
+            # RetryMiddleware coi là lỗi cần retry) — CHÍNH mã đã hết lượt retry và bị
+            # HttpErrorMiddleware chặn lại sẽ được các spider con báo qua errback riêng
+            # (xem topcv_detail_spider.py/itviec_detail_spider.py: handle_detail_failure).
+            # Ở đây chỉ cần con số tổng hợp cấp-run để giám sát nhanh, không cần biết job_id nào.
+            retry_http_codes = spider.crawler.settings.getlist("RETRY_HTTP_CODES", [])
             jobs_failed = sum(
                 stats.get(f"downloader/response_status_count/{code}", 0)
-                for code in http_error_codes
+                for code in retry_http_codes
             )
+            # Cộng thêm lỗi không có response (timeout, connection refused, Playwright navigation
+            # timeout...) — Scrapy tự động track dưới downloader/exception_count bất kể
+            # handle_httpstatus_list. Đây là lớp lỗi mà đếm theo status code thuần không bắt được.
+            jobs_failed += stats.get("downloader/exception_count", 0)
 
             run_id = str(uuid.uuid4())[:8]
             record = {
