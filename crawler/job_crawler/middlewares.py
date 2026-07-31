@@ -183,15 +183,25 @@ class LoginMiddleware:
         except (json.JSONDecodeError, OSError) as exc:
             logger.error("Failed to load ITviec cookies: %s", exc)
 
-    def process_request(self, request):
+    def process_request(self, request, spider): # Đã thêm tham số spider để hết cảnh báo
         if self.spider is None or self.spider.name != "itviec_detail":
             return None
         if not self.logged_in or not self.cookie_dict:
             return None
+            
+        # 1. Gán cookie cho Scrapy request thuần
         request.cookies = self.cookie_dict
+        
+        # 2. Ép cookie vào Playwright Browser Context (BẮT BUỘC cho Playwright)
+        formatted_cookies = [
+            {"name": k, "value": v, "domain": ".itviec.com", "path": "/"}
+            for k, v in self.cookie_dict.items()
+        ]
+        request.meta.setdefault("playwright_context_kwargs", {})["cookies"] = formatted_cookies
+        
         return None
 
-    def process_response(self, request, response):
+    def process_response(self, request, response, spider): # Đã thêm tham số spider
         if self.spider is None or self.spider.name != "itviec_detail":
             return response
         if response.status != 200:
@@ -202,11 +212,11 @@ class LoginMiddleware:
             and "sign_in" not in response.url
         ):
             if self.logged_in:
+                # SỬA LỖI TRUYỀN THAM SỐ CHO CLOSESPIDER BẰNG F-STRING
                 raise CloseSpider(
-                    "Auth-gated salary detected on %s — session expired. "
-                    "Re-run crawler/scripts/login_itviec.py to refresh cookies, "
-                    "then restart the crawl.",
-                    response.url,
+                    f"Auth-gated salary detected on {response.url} — session expired. "
+                    f"Re-run crawler/scripts/login_itviec.py to refresh cookies, "
+                    f"then restart the crawl."
                 )
             else:
                 logger.warning(
@@ -215,7 +225,6 @@ class LoginMiddleware:
                     response.url,
                 )
         return response
-
 
 # ========== THÊM MIDDLEWARE MỚI ==========
 class ForcePlaywrightMiddleware:
