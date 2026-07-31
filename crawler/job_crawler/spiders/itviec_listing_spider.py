@@ -1,5 +1,31 @@
 """Phase 1 — crawl trang listing ITviec, output jobs_meta_listing.jsonl.
-Cải tiến: lấy company_name, locations, skills, salary_display chính xác.
+
+[RÚT GỌN] Bỏ 6 field (work_mode_raw, salary_gated, posted_text, locations,
+skills, salary_display) từng thêm ở bản trước — phát hiện chúng KHÔNG được
+sources/itviec/parse.py._parse_listing() đọc lại, hàm đó tự trích y hệt dữ
+liệu này lần thứ 2, độc lập, trực tiếp từ raw_html_listing đã lưu. 2 nơi cùng
+làm 1 việc mà không liên quan tới nhau — rủi ro lệch kết quả nếu chỉ sửa 1 bên.
+Quay lại đúng triết lý đã thống nhất: crawler chỉ "chụp ảnh" thô (title, url,
+company_name, raw_html để audit nhanh), phần diễn giải (locations/skills/
+work_mode/salary...) để "parse.py" đảm nhiệm 1 nơi duy nhất. Giờ khớp đúng 9
+field cơ bản như topcv_listing_spider.py — 2 spider nhất quán schema.
+
+[FIX] company_name: card thật có 2 thẻ <a href*="/companies/">, 1 cái là logo
+(không có text), 1 cái mới chứa tên công ty (class text-rich-grey NGAY TRÊN
+chính thẻ <a>, không phải phần tử con). Verify trên 20 card thật (itviec_list.html):
+0/20 rỗng sau fix, so với 46/46 rỗng ở bản selector cũ dùng mô tả con sai.
+Giữ lại fix này vì company_name vẫn là field core (khớp TopCV), không thuộc
+nhóm bị bỏ ở trên.
+
+[FIX v2] start_urls -> async def start(): request trang 1 trước đây được Scrapy
+tự sinh qua cơ chế mặc định của start_urls, KHÔNG đi qua bất kỳ chỗ nào gắn
+meta={"playwright": True} — chỉ trang 2 trở đi (tạo thủ công trong parse())
+mới có. Override bằng async def start() — KHÔNG PHẢI def start_requests() kiểu
+cũ (đã thử fix v1 dùng start_requests(), verify qua log thật: 0 request/0 item,
+Scrapy 2.17's StartSpiderMiddleware không invoke được sync start_requests()) —
+để trang 1 cũng nhất quán dùng Playwright, đúng với
+SOURCE_REGISTRY["itviec"]["requires_browser"]=True. Đồng bộ pattern async def
+start() đã chạy tốt ở itviec_detail_spider.py/topcv_detail_spider.py.
 """
 import scrapy
 import re
@@ -14,7 +40,12 @@ class ItviecListingSpider(BaseSpider):
     base_url = "https://itviec.com/it-jobs/data-engineer"
     max_pages = 20
 
-    start_urls = [f"{base_url}?page=1"]
+    async def start(self):
+        yield scrapy.Request(
+            url=f"{self.base_url}?page=1",
+            callback=self.parse,
+            meta={"playwright": True},
+        )
 
     def parse(self, response):
         page_match = re.search(r'[?&]page=(\d+)', response.url)
@@ -39,73 +70,28 @@ class ItviecListingSpider(BaseSpider):
             url_value = card.attrib.get("data-search--job-selection-job-url-value", "")
             url = href if href else url_value
 
-            # Company name – lấy từ link text hoặc span bên trong
+            # Company name — lấy từ thẻ <a href*="/companies/"> có class
+            # text-rich-grey NGAY TRÊN chính nó (compound selector, KHÔNG phải mô
+            # tả con — card thật có 2 thẻ a href*="/companies/": 1 cái là logo
+            # không text, 1 cái mới chứa tên công ty)
             company_name = ""
-            company_selector = 'a[href*="/companies/"] .text-rich-grey'
-            company_nodes = card.css(company_selector)
+            company_nodes = card.css('a[href*="/companies/"].text-rich-grey')
             if not company_nodes:
-                # fallback: lấy trực tiếp từ thẻ a
-                company_nodes = card.css('a[href*="/companies/"]')
+                # fallback: lọc thủ công thẻ <a> nào thực sự có text (không phải logo rỗng)
+                for a_node in card.css('a[href*="/companies/"]'):
+                    text = a_node.xpath("string(.)").get(default="").strip()
+                    if text:
+                        company_nodes = a_node
+                        break
             if company_nodes:
                 company_name = company_nodes.xpath("string(.)").get(default="").strip()
-
-            # Work mode & salary gated từ text
-            badge_text = " ".join(card.css("::text").getall())
-            work_mode = ""
-            for wm in ("At office", "Hybrid", "Remote"):
-                if wm in badge_text:
-                    work_mode = wm
-                    break
-
-            salary_gated = "Sign in to view salary" in badge_text
-
-            # Posted date
-            posted_text = ""
-            posted_node = card.css("span.small-text.text-dark-grey")
-            if posted_node:
-                posted_text = posted_node.xpath("string(.)").get(default="").strip()
 
             # Vị trí trên trang
             index_value = card.attrib.get("data-search--job-selection-job-index-value")
 
-            # ** Lấy locations **
-            locations = []
-            location_node = card.css('div.imt-1.d-flex.align-items-center svg.feather-icon-map-pin + div.text-rich-grey')
-            if location_node:
-                loc_text = location_node.xpath("string(.)").get(default="").strip()
-                if loc_text:
-                    locations = [loc.strip() for loc in loc_text.split("-") if loc.strip()]
-            # fallback: tìm bất kỳ div nào có text chứa dấu "-" và map-pin gần đó
-            if not locations:
-                loc_divs = card.css('div.imt-1.d-flex.align-items-center')
-                for div in loc_divs:
-                    if div.css('svg.feather-icon-map-pin'):
-                        text = div.xpath("string(.)").get(default="").strip()
-                        if text and any(city in text for city in ["Ha Noi", "Ho Chi Minh", "Da Nang"]):
-                            locations = [loc.strip() for loc in text.split("-") if loc.strip()]
-                            break
-
-            # ** Lấy skills **
-            skills = []
-            skill_tags = card.css('a.itag.itag-light.itag-sm')
-            for tag in skill_tags:
-                skill_text = tag.xpath("string(.)").get(default="").strip()
-                if skill_text:
-                    skills.append(skill_text)
-
-            # ** Lấy salary display **
-            salary_display = ""
-            salary_node = card.css('div.salary a.sign-in-view-salary')
-            if salary_node:
-                salary_text = salary_node.xpath("string(.)").get(default="").strip()
-                salary_display = salary_text if salary_text else "Sign in to view salary"
-            else:
-                # Có thể có trường hợp hiển thị số tiền
-                salary_node2 = card.css('div.salary span')
-                if salary_node2:
-                    salary_display = salary_node2.xpath("string(.)").get(default="").strip()
-
-            # Tạo item
+            # Tạo item — đúng 9 field cơ bản, khớp topcv_listing_spider.py.
+            # raw_html vẫn lưu đầy đủ để parse.py tự trích locations/skills/
+            # work_mode/salary khi cần, không phải tính lại ở đây.
             item = JobCrawlerItem()
             item["item_type"] = "listing"
             item["job_id"] = slug
@@ -117,14 +103,6 @@ class ItviecListingSpider(BaseSpider):
             item["batch_date"] = self.batch_date
             item["listing_page_num"] = page_num
             item["listing_position"] = int(index_value) if index_value is not None else None
-            item["work_mode_raw"] = work_mode
-            item["salary_gated"] = salary_gated
-            item["posted_text"] = posted_text
-
-            # Các trường mới
-            item["locations"] = locations
-            item["skills"] = skills
-            item["salary_display"] = salary_display
 
             yield item
 
