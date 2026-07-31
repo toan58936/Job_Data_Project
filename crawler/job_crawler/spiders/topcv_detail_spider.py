@@ -1,4 +1,4 @@
-"""Spider for crawling ITviec job detail pages.
+"""Phase 2 — crawl detail TopCV, output jobs_meta_detail_status.jsonl.
 
 Đọc file jobs_meta_listing.jsonl, lấy title và company_name từ đó,
 và lưu vào item detail để file jobs_meta_detail_status.jsonl có đầy đủ metadata.
@@ -15,17 +15,17 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
-class ItviecDetailSpider(BaseSpider):
-    source_name = "itviec"
-    name = "itviec_detail"
+class TopcvDetailSpider(BaseSpider):
+    source_name = "topcv"
+    name = "topcv_detail"
 
     custom_settings = {
-        "DOWNLOAD_DELAY": 5,
+        "DOWNLOAD_DELAY": 3,
         "CONCURRENT_REQUESTS": 2,
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
     }
 
-    start_urls = ["https://itviec.com/it-jobs"]
+    start_urls = ["https://www.topcv.vn/"]
 
     def parse(self, response):
         listing_path = PROJECT_ROOT / "data" / "raw" / self.source_name / self.batch_date / "jobs_meta_listing.jsonl"
@@ -77,7 +77,7 @@ class ItviecDetailSpider(BaseSpider):
                         },
                         dont_filter=True,
                     )
-        logger.info(f"📋 Đã tạo {count} request detail cho ITviec")
+        logger.info(f"📋 Đã tạo {count} request detail cho TopCV")
 
     def parse_detail(self, response):
         job_id = response.meta.get("job_id", "unknown")
