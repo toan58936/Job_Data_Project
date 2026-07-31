@@ -1,4 +1,7 @@
+import json
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
@@ -16,6 +19,60 @@ DOWNLOAD_HANDLERS = {
 }
 PLAYWRIGHT_BROWSER_TYPE = "chromium"
 PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
+
+
+# ---------------------------------------------------------------------------
+# [FIX] Cookie đăng nhập ITviec — nạp 1 LẦN lúc khởi động qua storage_state,
+# KHÔNG dùng request.cookies mỗi request nữa.
+#
+# Lý do: scrapy-playwright (0.0.48) nhận diện request.cookies và cố truyền
+# thẳng vào Browser.new_context(cookies=...) — nhưng Playwright (1.61.0)
+# không có tham số `cookies` ở new_context() (chỉ có `storage_state`).
+# -> Mọi request có request.cookies set sẽ crash ngay lúc tạo context:
+#    TypeError: Browser.new_context() got an unexpected keyword argument 'cookies'
+#
+# Fix: tạo sẵn 1 context tên "itviec_authed" có cookie load sẵn qua
+# storage_state (API chính thức, ổn định qua version, không phụ thuộc cơ chế
+# tự động convert request.cookies của scrapy-playwright). LoginMiddleware chỉ
+# cần gán request.meta["playwright_context"] = "itviec_authed", không đụng
+# request.cookies nữa (xem middlewares.py).
+# ---------------------------------------------------------------------------
+def _load_itviec_storage_state() -> dict:
+    """Convert data/metadata/itviec_cookies.json (dict name->value, do
+    crawler/scripts/login_itviec.py tạo ra) sang format Playwright
+    storage_state cần: {"cookies": [{name, value, domain, path}, ...]}.
+    Trả về context rỗng (không cookie) nếu file chưa tồn tại — crawl vẫn
+    chạy được, chỉ là không đăng nhập (salary sẽ AUTH_GATED)."""
+    cookies_path = (
+        Path(__file__).resolve().parent.parent.parent
+        / "data" / "metadata" / "itviec_cookies.json"
+    )
+    if not cookies_path.exists():
+        return {"cookies": []}
+
+    try:
+        with open(cookies_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {"cookies": []}
+
+    cookies = [
+        {
+            "name": name,
+            "value": value,
+            "domain": ".itviec.com",  # dấu "." để áp dụng cho cả subdomain
+            "path": "/",
+        }
+        for name, value in raw.items()
+    ]
+    return {"cookies": cookies}
+
+
+PLAYWRIGHT_CONTEXTS = {
+    "itviec_authed": {
+        "storage_state": _load_itviec_storage_state(),
+    },
+}
 
 DOWNLOAD_DELAY = 5
 RANDOMIZE_DOWNLOAD_DELAY = True
@@ -40,7 +97,7 @@ USER_AGENT_LIST = [
 DOWNLOADER_MIDDLEWARES = {
     "job_crawler.middlewares.RotatingUserAgentMiddleware": 400,
     "job_crawler.middlewares.LoginMiddleware": 543,
-    "job_crawler.middlewares.ForcePlaywrightMiddleware": 550,  # <--- THÊM DÒNG NÀY
+    "job_crawler.middlewares.ForcePlaywrightMiddleware": 550,
 }
 
 ITEM_PIPELINES = {

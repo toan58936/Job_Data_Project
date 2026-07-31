@@ -1,13 +1,27 @@
 """
-LoginMiddleware – authenticates to ITviec (Stimulus.js login form)
-by reading session cookies from a pre-saved JSON file.
+LoginMiddleware – authenticates to ITviec by reading pre-saved session
+cookies and attaching them to the "itviec_authed" Playwright context
+(defined in settings.py via PLAYWRIGHT_CONTEXTS / storage_state).
 
-The cookies file is produced by a separate Playwright script run
-outside Scrapy's event loop (e.g. crawler/scripts/login_itviec.py).
+The cookies file is produced by a separate Playwright script run outside
+Scrapy's event loop (crawler/scripts/login_itviec.py).
 
 If the cookies file is missing or stale, the middleware disables itself
 gracefully and crawling continues without authentication (salary will
 show as AUTH_GATED).
+
+[FIX — xem giải thích chi tiết trong settings.py]
+Trước đây middleware set request.cookies = self.cookie_dict trực tiếp.
+scrapy-playwright (0.0.48) nhận diện request.cookies và cố truyền thẳng
+vào Browser.new_context(cookies=...) — nhưng Playwright (1.61.0) không có
+tham số `cookies` ở new_context() (chỉ có `storage_state`) -> crash ngay
+lúc tạo context cho MỌI request itviec_detail:
+    TypeError: Browser.new_context() got an unexpected keyword argument 'cookies'
+
+Sửa: không đụng request.cookies nữa. Cookie đã được nạp sẵn 1 lần lúc
+khởi động vào context "itviec_authed" qua storage_state (settings.py).
+Middleware chỉ cần gán request.meta["playwright_context"] = "itviec_authed"
+để request dùng đúng context đã có cookie đó.
 """
 import json
 import logging
@@ -30,7 +44,13 @@ def login_via_playwright(email: str, password: str) -> bool:
     """Run Playwright headless browser to log in and save cookies to disk.
 
     Intended to be called from a standalone script or CLI, NOT from inside
-    Scrapy's async context.
+    Scrapy's async context. Dùng crawler/scripts/login_itviec.py để debug —
+    hàm này giữ lại để có thể gọi programmatically nếu cần (ví dụ từ 1 job
+    scheduler tự động refresh cookie định kỳ).
+
+    [FIX] URL login cũ https://itviec.com/users/sign_in trả về trang lỗi 404
+    tuỳ chỉnh của ITviec (nhưng vẫn HTTP 200, nên không tự phát hiện được nếu
+    không check nội dung). URL đúng: https://itviec.com/sign_in (verify 31/07/2026).
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -54,31 +74,46 @@ def login_via_playwright(email: str, password: str) -> bool:
             )
             page = context.new_page()
 
-            page.goto("https://itviec.com/users/sign_in", timeout=30000)
+            page.goto("https://itviec.com/sign_in", timeout=30000)  # [FIX] URL đúng
             page.wait_for_load_state("networkidle")
 
-            page.wait_for_selector(
-                'input[name="user[email]"]', timeout=15000
-            )
+            # [FIX] Selector cũ dựa vào tên attribute Rails cũ (user[email]) —
+            # ưu tiên tìm theo label text trước, ổn định hơn nếu site đổi tên field.
+            try:
+                email_input = page.get_by_label("Email", exact=False).first
+                email_input.wait_for(timeout=10000)
+            except Exception:
+                page.wait_for_selector('input[name="user[email]"]', timeout=15000)
+                email_input = page.locator('input[name="user[email]"]').first
 
-            page.fill('input[name="user[email]"]', email)
-            page.fill('input[name="user[password]"]', password)
-            page.click('button[type="submit"]')
+            email_input.fill(email)
 
-            page.wait_for_url("**/it-jobs/**", timeout=15000)
+            try:
+                password_input = page.get_by_label("Password", exact=False).first
+                password_input.wait_for(timeout=5000)
+            except Exception:
+                password_input = page.locator('input[name="user[password]"]').first
+            password_input.fill(password)
+
+            try:
+                page.get_by_role("button", name="Sign In with Email", exact=False).first.click()
+            except Exception:
+                page.click('button[type="submit"]')
+
+            page.wait_for_timeout(4000)
             page.wait_for_load_state("networkidle")
 
             cookies = context.cookies()
             itviec_cookies = {
                 c["name"]: c["value"]
                 for c in cookies
-                if c["domain"] == "itviec.com"
+                if "itviec.com" in c["domain"]
             }
 
             has_session = any(
                 "session" in c["name"].lower()
                 for c in cookies
-                if c["domain"] == "itviec.com"
+                if "itviec.com" in c["domain"]
             )
 
             browser.close()
@@ -121,9 +156,11 @@ class RotatingUserAgentMiddleware:
 
 
 class LoginMiddleware:
-    """Middleware that attaches pre-saved ITviec session cookies to
-    Scrapy requests.  The cookies must be saved to disk first (see
-    crawler/scripts/login_itviec.py or LoginMiddleware.login_via_playwright())."""
+    """Middleware gắn context Playwright đã có sẵn cookie login ITviec
+    (context "itviec_authed", được nạp cookie qua storage_state lúc khởi
+    động trong settings.py) vào mọi request của spider itviec_detail.
+
+    [FIX] Không còn set request.cookies trực tiếp — xem lý do ở đầu file."""
 
     def __init__(self, email, password):
         self.email = email
@@ -156,7 +193,10 @@ class LoginMiddleware:
             self._load_cookies()
 
     def _load_cookies(self):
-        """Load session cookies from the pre-saved JSON file."""
+        """Load session cookies from the pre-saved JSON file — chỉ dùng để
+        biết có nên bật auth hay không (self.logged_in), KHÔNG dùng để set
+        request.cookies nữa. Cookie thật đã được nạp vào context
+        "itviec_authed" qua storage_state trong settings.py."""
         path = _cookies_path()
         if not path.exists():
             logger.warning(
@@ -172,7 +212,8 @@ class LoginMiddleware:
             if self.cookie_dict:
                 self.logged_in = True
                 logger.info(
-                    "Loaded %d ITviec session cookies from %s",
+                    "Loaded %d ITviec session cookies from %s "
+                    "(sẽ dùng context 'itviec_authed' cho mọi request detail)",
                     len(self.cookie_dict),
                     path,
                 )
@@ -183,28 +224,30 @@ class LoginMiddleware:
         except (json.JSONDecodeError, OSError) as exc:
             logger.error("Failed to load ITviec cookies: %s", exc)
 
-    def process_request(self, request, spider): # Đã thêm tham số spider để hết cảnh báo
+    def process_request(self, request):
         if self.spider is None or self.spider.name != "itviec_detail":
             return None
         if not self.logged_in or not self.cookie_dict:
             return None
-            
-        # 1. Gán cookie cho Scrapy request thuần
-        request.cookies = self.cookie_dict
-        
-        # 2. Ép cookie vào Playwright Browser Context (BẮT BUỘC cho Playwright)
-        formatted_cookies = [
-            {"name": k, "value": v, "domain": ".itviec.com", "path": "/"}
-            for k, v in self.cookie_dict.items()
-        ]
-        request.meta.setdefault("playwright_context_kwargs", {})["cookies"] = formatted_cookies
-        
+        # [FIX] Không set request.cookies nữa (nguyên nhân crash — xem đầu file).
+        # Chỉ trỏ request này dùng context đã có sẵn cookie login.
+        request.meta["playwright_context"] = "itviec_authed"
         return None
 
-    def process_response(self, request, response, spider): # Đã thêm tham số spider
+    def process_response(self, request, response):
         if self.spider is None or self.spider.name != "itviec_detail":
             return response
         if response.status != 200:
+            return response
+
+        # [FIX] Chỉ check auth-gated trên request detail THẬT (có job_id trong
+        # meta — do parse_detail() set qua scrapy.Request(meta={"job_id": ...})).
+        # Request seed (start_urls = "https://itviec.com/it-jobs", dùng để đọc
+        # file JSONL và tạo request detail) KHÔNG có job_id -> bỏ qua, tránh
+        # false positive: trang listing công khai luôn có chữ
+        # "Sign in to view salary" cho các job người xem chưa đăng nhập,
+        # không liên quan gì đến việc cookie đăng nhập của mình có hết hạn hay không.
+        if "job_id" not in request.meta:
             return response
 
         if (
@@ -212,11 +255,13 @@ class LoginMiddleware:
             and "sign_in" not in response.url
         ):
             if self.logged_in:
-                # SỬA LỖI TRUYỀN THAM SỐ CHO CLOSESPIDER BẰNG F-STRING
+                # [FIX] CloseSpider chỉ nhận 1 tham số reason (str) — trước đây
+                # truyền kiểu %-format 2 tham số rời (giống logger.warning) gây
+                # TypeError. Format chuỗi trước rồi mới truyền vào.
                 raise CloseSpider(
-                    f"Auth-gated salary detected on {response.url} — session expired. "
-                    f"Re-run crawler/scripts/login_itviec.py to refresh cookies, "
-                    f"then restart the crawl."
+                    "Auth-gated salary detected on {} — session expired. "
+                    "Re-run crawler/scripts/login_itviec.py to refresh cookies, "
+                    "then restart the crawl.".format(response.url)
                 )
             else:
                 logger.warning(
@@ -226,7 +271,7 @@ class LoginMiddleware:
                 )
         return response
 
-# ========== THÊM MIDDLEWARE MỚI ==========
+
 class ForcePlaywrightMiddleware:
     """Thêm playwright=True vào mọi request của spider topcv_listing và topcv_detail"""
     def process_request(self, request, spider):
