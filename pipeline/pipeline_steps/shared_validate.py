@@ -69,6 +69,8 @@ def validate_batch(
     for record in records:
         result = validate(record, registry_entry)
         if result.is_valid:
+            # Bơm cờ phân loại vào kho mở rộng để trạm Enrich phía sau sử dụng
+            record.source_extra["data_completeness"] = result.data_completeness
             valid_records.append(record)
         else:
             rejected.append({
