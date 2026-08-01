@@ -2,13 +2,13 @@ import re
 from typing import Any, Optional
 from datetime import datetime 
 from lxml import html
-from pydantic import BaseModel
 
 from types import SimpleNamespace
 
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
 from pipeline.tools.date_parser import parse_vietnamese_date
+
 # TopCV job pages không có <meta charset="utf-8">, nên lxml phải tự đoán encoding.
 # Khi input là bytes (ví dụ đọc lại raw HTML từ Bronze storage), việc đoán sai encoding
 # sẽ biến toàn bộ text tiếng Việt thành mojibake (VD: "Công ty" -> "CÃ´ng ty").
@@ -29,37 +29,17 @@ def _has_class(class_name: str) -> str:
     return f"contains(concat(' ', normalize-space(@class), ' '), ' {class_name} ')"
 
 
-class _SalaryInfo(BaseModel):
-    status: SalaryStatus
-    min: Optional[float] = None
-    max: Optional[float] = None
-
-
-def _parse_salary(text: str) -> _SalaryInfo:
-    cleaned = text.strip()
-    if not cleaned or cleaned == "Thoả thuận" or cleaned == "Thỏa thuận":
-        return _SalaryInfo(status=SalaryStatus.NEGOTIABLE)
-    match = re.search(r"(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*triệu", cleaned, re.IGNORECASE)
-    if match:
-        return _SalaryInfo(
-            status=SalaryStatus.DISCLOSED,
-            min=float(match.group(1).replace(",", ".")),
-            max=float(match.group(2).replace(",", ".")),
-        )
-    match = re.search(r"Tới\s+(\d+(?:[.,]\d+)?)\s*triệu", cleaned, re.IGNORECASE)
-    if match:
-        return _SalaryInfo(
-            status=SalaryStatus.DISCLOSED,
-            max=float(match.group(1).replace(",", ".")),
-        )
-    # "Trên X triệu" (chỉ có sàn lương, không có trần) — dạng này chưa được xử lý ở bản gốc.
-    match = re.search(r"Trên\s+(\d+(?:[.,]\d+)?)\s*triệu", cleaned, re.IGNORECASE)
-    if match:
-        return _SalaryInfo(
-            status=SalaryStatus.DISCLOSED,
-            min=float(match.group(1).replace(",", ".")),
-        )
-    return _SalaryInfo(status=SalaryStatus.NOT_PROVIDED)
+def _get_salary_status(text: str) -> SalaryStatus:
+    """
+    Chỉ phân loại trạng thái lương, KHÔNG bóc tách con số ở bước này.
+    Việc bóc tách và quy đổi tỷ giá sẽ do shared_salary_convert.py đảm nhiệm.
+    """
+    cleaned = text.strip().lower()
+    if not cleaned:
+        return SalaryStatus.NOT_PROVIDED
+    if cleaned in ("thoả thuận", "thỏa thuận", "thương lượng", "negotiable"):
+        return SalaryStatus.NEGOTIABLE
+    return SalaryStatus.DISCLOSED
 
 
 def _map_work_mode(text: str) -> Optional[WorkMode]:
@@ -161,10 +141,6 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         if "Địa điểm làm việc" in title_text or "Địa chỉ" in title_text:
             lis = item.xpath('.//li')
             for li in lis:
-                # QUAN TRỌNG: lấy TOÀN BỘ text của <li>, không chỉ phần trong <strong>.
-                # Bản gốc chỉ lấy strong[0].text_content() ("Hà Nội") và VỨT BỎ phần địa chỉ
-                # chi tiết phía sau ("Tòa Rivera Park, 69 Vũ Trọng Phụng, Phường Thanh Xuân..."),
-                # làm mất dữ liệu địa chỉ đầy đủ.
                 text = re.sub(r"\s+", " ", li.xpath("string(.)")).strip()
                 if text and text not in seen_locs:
                     seen_locs.add(text)
@@ -208,9 +184,11 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     salary_nodes = tree.xpath('//span[contains(@class, "box-header-job__salary--title")]')
     if salary_nodes:
         salary_text = salary_nodes[0].text_content().strip()
-    salary_info = _parse_salary(salary_text)
+    
+    # Chỉ lấy status, không parse số ở đây nữa
+    salary_status = _get_salary_status(salary_text)
 
-    # --- Kinh nghiệm / Hạn ứng tuyển (trước đây chưa được crawl) ---
+    # --- Kinh nghiệm / Hạn ứng tuyển ---
     header_info = _extract_header_list_info(tree)
 
     # --- Skills ---
@@ -234,12 +212,13 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
             skills_industry.extend(skills)
 
     source_extra: dict[str, Any] = {
+        "salary_raw": salary_text,  # Đẩy text gốc sang đây cho Bước 4
         "skills_required_raw": skills_required,
         "skills_nice_to_have_raw": skills_nice_to_have,
         "skills_industry_raw": skills_industry,
         "requirements_raw": requirements_raw,
         "benefits_raw": benefits_raw,
-        **header_info,  # experience_raw, deadline_raw (chỉ có khi tìm thấy trên trang)
+        **header_info,  
     }
 
     return {
@@ -248,9 +227,9 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         "locations": locations,
         "description_raw": description_raw,
         "work_mode": work_mode,
-        "salary_status": salary_info.status,
-        "salary_min": salary_info.min,
-        "salary_max": salary_info.max,
+        "salary_status": salary_status,
+        "salary_min": None, # Reset về None để Pipeline xử lý
+        "salary_max": None, # Reset về None để Pipeline xử lý
         "source_extra": source_extra,
     }
 
@@ -270,6 +249,7 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
         "salary_max": None,
         "posted_date_raw": posted_date_raw,
         "source_extra": {
+            "salary_raw": "",
             "skills_required_raw": [],
             "skills_nice_to_have_raw": [],
             "skills_industry_raw": [],
@@ -295,8 +275,6 @@ def parse(raw: RawRecord) -> SourceNormalized:
     source_extra = data["source_extra"]
     if posted_date_parsed:
         source_extra["posted_date_parsed"] = posted_date_parsed.isoformat()
-
-
 
     return SourceNormalized(
         job_id=raw.job_id,

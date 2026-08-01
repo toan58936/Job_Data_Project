@@ -24,7 +24,8 @@ def load_adapter(source_name: str):
 
 def load_fixture(source_name: str, case_name: str) -> RawRecord:
     if source_name == "topcv" and case_name == "case_a_full":
-        batch_dir = Path("data/raw/topcv/2026-07-28")
+        # Sửa lại ngày ở đây thành 2026-07-31
+        batch_dir = Path("data/raw/topcv/2026-07-31")
         listing_rows = []
         detail_rows = []
         with open(batch_dir / "jobs_meta_listing.jsonl", "r", encoding="utf-8") as f:
@@ -45,8 +46,10 @@ def load_fixture(source_name: str, case_name: str) -> RawRecord:
                     detail_rows.append(row)
         listing_row = listing_rows[0] if listing_rows else {}
         detail_row = detail_rows[0] if detail_rows else None
+        
     elif source_name == "itviec" and case_name == "case_a_full":
-        batch_dir = Path("data/raw/itviec/2026-07-28")
+        # Sửa lại ngày ở đây thành 2026-07-31
+        batch_dir = Path("data/raw/itviec/2026-07-31")
         listing_rows = []
         detail_rows = []
         with open(batch_dir / "jobs_meta_listing.jsonl", "r", encoding="utf-8") as f:
@@ -83,7 +86,8 @@ def load_fixture(source_name: str, case_name: str) -> RawRecord:
     return RawRecord(
         job_id=target_id,
         source=source_name,
-        batch_date="2026-07-28",
+        # Sửa luôn batch_date ở đây nếu cần cho khớp
+        batch_date="2026-07-31",
         url=listing_row.get("url", ""),
         title_listing=listing_row.get("title", ""),
         listing_page_num=listing_row.get("listing_page_num"),

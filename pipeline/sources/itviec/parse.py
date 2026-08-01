@@ -4,41 +4,10 @@ from datetime import datetime
 from typing import Any, Optional
 
 from lxml import html
-from pydantic import BaseModel
 
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
 from pipeline.tools.date_parser import parse_vietnamese_date
-
-
-class _SalaryInfo(BaseModel):
-    status: SalaryStatus
-    min: Optional[float] = None
-    max: Optional[float] = None
-
-
-def _parse_salary(text: str) -> _SalaryInfo:
-    cleaned = text.strip()
-    if not cleaned or cleaned == "Thoả thuận" or cleaned == "Thỏa thuận":
-        return _SalaryInfo(status=SalaryStatus.NEGOTIABLE)
-    match = re.search(
-        r"(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)\s*(?:triệu|VND|USD)",
-        cleaned,
-        re.IGNORECASE,
-    )
-    if match:
-        return _SalaryInfo(
-            status=SalaryStatus.DISCLOSED,
-            min=float(match.group(1).replace(",", ".")),
-            max=float(match.group(2).replace(",", ".")),
-        )
-    match = re.search(r"Tới\s+(\d+(?:[.,]\d+)?)\s*(?:triệu|VND|USD)", cleaned, re.IGNORECASE)
-    if match:
-        return _SalaryInfo(
-            status=SalaryStatus.DISCLOSED,
-            max=float(match.group(1).replace(",", ".")),
-        )
-    return _SalaryInfo(status=SalaryStatus.NOT_PROVIDED)
 
 
 def _map_work_mode(text: str) -> Optional[WorkMode]:
@@ -120,12 +89,6 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
             elif text.startswith("Posted"):
                 posted_date_raw = re.sub(r"Posted\s*", "", text).strip()
 
-    # [FIX] json_data trên thực tế LUÔN rỗng (data-jobs--save-data-layer-value không
-    # tồn tại trong HTML thật, đã verify — xem SOURCE_REGISTRY["itviec"]["has_json_data_layer"]).
-    # Trước đây locations không có fallback nào ngoài json_data -> luôn ra [] mỗi khi
-    # _parse_detail() thực sự chạy, dù raw_html_detail có đầy đủ nội dung. Bổ sung fallback
-    # đọc trực tiếp từ .job-show-info (cấu trúc thật: span "City, Ho Chi Minh" / "City, Ha Noi",
-    # cùng khối chứa work_mode/posted_date ở trên nên tận dụng luôn container đã có).
     if not locations and container:
         city_spans = container[0].xpath('.//span[starts-with(normalize-space(.), "City,")]')
         for span in city_spans:
@@ -134,25 +97,44 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
             if loc and loc not in locations:
                 locations.append(loc)
 
+    # --- Xử lý lương (Không bóc số ở đây, chỉ gom text thô cho Bước 4) ---
     salary_status = SalaryStatus.NOT_PROVIDED
-    salary_min = None
-    salary_max = None
-    if json_data:
-        salary_range = json_data.get("salary_range", "")
-        if salary_range:
-            salary_info = _parse_salary(salary_range)
-            salary_status = salary_info.status
-            salary_min = salary_info.min
-            salary_max = salary_info.max
-        else:
-            salary_status = SalaryStatus.AUTH_GATED
+    salary_text = ""
 
-    # [FIX] XPath cũ: //h2[contains(text(), "Job description")] chỉ khớp text node
-    # TRỰC TIẾP của <h2> — nếu site bọc chữ trong <span> (rất phổ biến,
-    # <h2><span>Job description</span></h2>), biểu thức này KHÔNG BAO GIỜ khớp, gây
-    # description_raw="" bất kể trang có nội dung hay không, bất kể có login hay không.
-    # Dùng contains(string(.), ...) để so trên toàn bộ text (kể cả text cháu), khớp
-    # đúng ý định gốc ("h2 nào có chữ Job description ở bất kỳ đâu trong nó").
+    # 1. Thử lấy text lương trong phạm vi container (tránh quét nhầm sang Similar Jobs bên dưới)
+    salary_nodes = []
+    if container:
+        salary_nodes = container[0].xpath(
+            './/span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | .//a[contains(@class, "sign-in-view-salary")]'
+        )
+    
+    # Fallback an toàn trên toàn tree nếu container không bắt được
+    if not salary_nodes:
+        salary_nodes = tree.xpath(
+            '//span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | //a[contains(@class, "sign-in-view-salary")]'
+        )
+
+    if salary_nodes:
+        salary_text = _extract_text(salary_nodes[0])
+
+    # 2. Nếu không thấy node sign-in, thử tìm các thẻ hiển thị lương thông thường
+    if not salary_text and container:
+        salary_range_nodes = container[0].xpath('.//div[contains(@class, "salary")]//span | .//span[contains(@class, "salary")]')
+        if salary_range_nodes:
+            salary_text = _extract_text(salary_range_nodes[0])
+
+    # 3. Phân loại trạng thái lương cơ bản (Đã fix lỗi case-sensitivity của "đăng nhập")
+    cleaned_salary = salary_text.strip().lower()
+    if not cleaned_salary:
+        salary_status = SalaryStatus.NOT_PROVIDED
+    elif "sign in" in cleaned_salary or "đăng nhập" in cleaned_salary:
+        salary_status = SalaryStatus.AUTH_GATED
+    elif cleaned_salary in ("thoả thuận", "thỏa thuận", "negotiable"):
+        salary_status = SalaryStatus.NEGOTIABLE
+    else:
+        # Nếu có chuỗi văn bản lương cụ thể (VD: "1000 - 2000 USD")
+        salary_status = SalaryStatus.DISCLOSED
+
     description_raw = ""
     h2_nodes = tree.xpath('//h2[contains(string(.), "Job description")]')
     if h2_nodes:
@@ -174,29 +156,15 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     if raw_skills:
         json_skills = [s.strip() for s in raw_skills.split(",") if s.strip()]
 
-    # [FIX] Nếu json_data rỗng (case thực tế luôn xảy ra), json_skills luôn [] dù
-    # trang detail có sẵn skill tag (Skills:/Job Expertise:/Job Domain: đọc được qua
-    # _extract_skill_groups() ở trên). Fallback về skill_groups["skills"] khi cần,
-    # để skills_raw không bị rỗng oan uổng chỉ vì thiếu JSON data layer.
     if not json_skills:
         json_skills = skill_groups["skills"]
 
     source_extra: dict[str, Any] = {
+        "salary_raw": salary_text,  # Đẩy chuỗi lương thô sang cho Bước 4 tính toán
         "skills_raw": json_skills,
         "job_expertise_raw": skill_groups["job_expertise"],
         "job_domain_raw": skill_groups["job_domain"],
     }
-
-    salary_text = ""
-    salary_nodes = tree.xpath(
-        '//span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")]'
-    )
-    if not salary_nodes:
-        salary_nodes = tree.xpath('//a[contains(@class, "sign-in-view-salary")]')
-    if salary_nodes:
-        salary_text = _extract_text(salary_nodes[0])
-    if salary_status == SalaryStatus.NOT_PROVIDED and "sign in" in salary_text.lower():
-        salary_status = SalaryStatus.AUTH_GATED
 
     return {
         "title": title,
@@ -206,8 +174,8 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         "work_mode": work_mode,
         "posted_date_raw": posted_date_raw,
         "salary_status": salary_status,
-        "salary_min": salary_min,
-        "salary_max": salary_max,
+        "salary_min": None,  # Reset để Bước 4 lo
+        "salary_max": None,  # Reset để Bước 4 lo
         "source_extra": source_extra,
     }
 
@@ -247,7 +215,7 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
         company_nodes = tree.xpath('//a[contains(@href, "/companies/")]')
         for cn in company_nodes:
             text = cn.text_content().strip()
-            if text and text not in ("",):
+            if text:
                 company_name = text
                 break
 
@@ -279,6 +247,7 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
         "salary_max": None,
         "posted_date_raw": posted_date_raw,
         "source_extra": {
+            "salary_raw": "",
             "skills_raw": skills_required,
             "job_expertise_raw": [],
             "job_domain_raw": [],
@@ -297,10 +266,6 @@ def _extract_text(node) -> str:
 
 
 def parse(raw: RawRecord) -> SourceNormalized:
-    # [GHI CHÚ CHẨN ĐOÁN] Nếu batch trước đó toàn bộ job ra description_raw="",
-    # salary_status="auth_gated", locations vẫn có giá trị thật -> dấu hiệu raw.detail_crawled
-    # đang là False (rẽ vào _parse_listing() dù crawler đã crawl detail xong) -> kiểm tra
-    # merge.py / jobs_meta_detail_status.jsonl trước, KHÔNG phải bug trong file này.
     if raw.detail_crawled and raw.raw_html_detail:
         data = _parse_detail(raw)
     else:
