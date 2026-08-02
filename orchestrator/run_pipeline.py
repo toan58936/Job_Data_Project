@@ -1,7 +1,7 @@
 """
 run_pipeline.py — Nhạc trưởng điều phối toàn bộ luồng Data Pipeline.
-Kết nối các module: Merge -> Parse -> Clean -> Normalize -> Salary Convert -> Validate -> Enrich.
-Tự động lưu Checkpoint sau các chặng quan trọng (Normalized và Enriched).
+Luồng: Merge -> Parse -> Clean -> Normalize -> Salary Convert -> Validate -> Enrich.
+Tự động lưu Checkpoint (JSONL) xuống ổ đĩa đúng theo thiết kế kiến trúc.
 """
 import argparse
 import importlib
@@ -13,7 +13,16 @@ from pipeline.pipeline_steps.shared_normalize import normalize
 from pipeline.pipeline_steps.shared_salary_convert import convert_salary
 from pipeline.pipeline_steps.shared_validate import validate_batch, write_rejected
 from pipeline.pipeline_steps.shared_enrich import enrich
-from shared.source_registry import SOURCE_REGISTRY
+
+# Giả định bạn có file registry này, nếu chưa có, hãy tạo một dict đơn giản chứa cấu hình
+try:
+    from shared.source_registry import SOURCE_REGISTRY
+except ImportError:
+    # Fallback nếu chưa có file shared/source_registry.py
+    SOURCE_REGISTRY = {
+        "itviec": {"skill_tag_structure": "flat"},
+        "topcv": {"skill_tag_structure": "grouped"}
+    }
 
 
 def load_parser(source: str):
@@ -32,7 +41,7 @@ def main():
     batch_date = args.date
 
     if source not in SOURCE_REGISTRY:
-        print(f"❌ Lỗi: Nguồn '{source}' chưa được khai báo trong SOURCE_REGISTRY.")
+        print(f"❌ Lỗi: Nguồn '{source}' chưa được cấu hình.")
         return
 
     print(f"\n🚀 BẮT ĐẦU CHẠY PIPELINE CHO {source.upper()} - NGÀY {batch_date}")
@@ -44,9 +53,9 @@ def main():
     print("[1/5] Đang merge dữ liệu thô từ Crawler...")
     raw_records = merge_raw_records(source, batch_date)
     if not raw_records:
-        print("⚠️ Không có dữ liệu thô để xử lý. Dừng pipeline.")
+        print("⚠️ Không có dữ liệu thô để xử lý. Kiểm tra lại thư mục data/raw/")
         return
-    print(f"      -> Tìm thấy {len(raw_records)} bản ghi.")
+    print(f"      -> Tìm thấy {len(raw_records)} bản ghi (RawRecord).")
 
     # ==========================================
     # BƯỚC 2: PARSE -> CLEAN -> NORMALIZE -> SALARY
@@ -57,7 +66,6 @@ def main():
     
     for raw in raw_records:
         try:
-            # Dòng chảy tuyến tính
             parsed = parse_module.parse(raw)
             cleaned = clean(parsed)
             normalized = normalize(cleaned)
@@ -84,9 +92,9 @@ def main():
     
     if rejected_records:
         rej_file = write_rejected(rejected_records, source, batch_date)
-        print(f"      🗑️ Đã loại bỏ {len(rejected_records)} bản ghi rác. Log tại: {rej_file}")
+        print(f"      🗑️ Đã loại bỏ {len(rejected_records)} bản ghi lỗi. Log tại: {rej_file}")
     else:
-        print("      ✨ Không có bản ghi nào bị loại.")
+        print("      ✨ 100% bản ghi vượt qua kiểm định.")
 
     # ==========================================
     # BƯỚC 4: LÀM GIÀU DỮ LIỆU (ENRICH)
@@ -106,6 +114,7 @@ def main():
     enriched_file = enriched_dir / "enriched.jsonl"
     with open(enriched_file, "w", encoding="utf-8") as f:
         for rec in enriched_records:
+            # exclude_none=True để file JSON gọn gàng, không chứa các trường null vô ích
             f.write(rec.model_dump_json(exclude_none=True) + "\n")
     print(f"      ✅ Đã lưu Checkpoint 2 (Golden Data): {enriched_file}")
 
@@ -114,7 +123,7 @@ def main():
     # ==========================================
     print("-" * 60)
     print(f"🎉 HOÀN TẤT PIPELINE!")
-    print(f"📊 Thống kê: Nhận {len(raw_records)} -> Hợp lệ {len(enriched_records)} -> Loại bỏ {len(rejected_records)}\n")
+    print(f"📊 Thống kê: Nhận {len(raw_records)} -> Hợp lệ & Enriched: {len(enriched_records)} -> Loại bỏ: {len(rejected_records)}\n")
 
 
 if __name__ == "__main__":

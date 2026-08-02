@@ -112,7 +112,17 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     title = ""
     title_nodes = tree.xpath('//h1[contains(@class, "box-header-job__title")]')
     if not title_nodes:
-        title_nodes = tree.xpath('//h1')
+        # SỬA: trang "brand" của TopCV (VD /brand/fptsoftwareacademy/tuyen-dung/...,
+        # trang tuyển dụng riêng của 1 công ty) dùng template khác hẳn trang /viec-lam/
+        # thường — không có h1.box-header-job__title, tiêu đề tin nằm ở <h4 class="title-job">.
+        title_nodes = tree.xpath('//h4[contains(@class, "title-job")]')
+    if not title_nodes:
+        # Fallback cuối cùng: lấy <h1> bất kỳ — NHƯNG loại trừ h1 nằm trong
+        # <a class="company-content__name"> (đây chính là tên CÔNG TY trên trang brand,
+        # không phải tên tin — nếu không loại trừ, title sẽ bị gán nhầm = tên công ty).
+        title_nodes = tree.xpath(
+            '//h1[not(ancestor::a[contains(@class, "company-content__name")])]'
+        )
     if title_nodes:
         title = re.sub(r"\s+", " ", title_nodes[0].xpath("string(.)")).strip()
 
@@ -121,12 +131,22 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     company_nodes = tree.xpath('//div[contains(@class, "box-company-info__detail")]//a[contains(@class, "name")]')
     if not company_nodes:
         company_nodes = tree.xpath('//div[contains(@class, "company-name-label")]//a[contains(@class, "name")]')
+    if not company_nodes:
+        # SỬA: trang brand — tên công ty nằm trong <a class="company-content__name">,
+        # bọc 1 <h1> (chính cái h1 dễ bị nhầm ở trên). Đây mới là nơi ĐÚNG để lấy company_name.
+        company_nodes = tree.xpath('//a[contains(@class, "company-content__name")]')
     if company_nodes:
         company_name = re.sub(r"\s+", " ", company_nodes[0].text_content()).strip()
 
     # Fallback: tìm bất kỳ link nào chứa tên công ty
     if not company_name:
         company_nodes = tree.xpath('//a[contains(@href, "/cong-ty/")]//span')
+        if company_nodes:
+            company_name = re.sub(r"\s+", " ", company_nodes[0].text_content()).strip()
+    if not company_name:
+        # SỬA: fallback thêm cho link dạng /brand/{slug} có class "company" (thấy ở khối
+        # "same company" job cards) — dùng làm phao cứu cuối nếu 2 cách trên đều trượt.
+        company_nodes = tree.xpath('//a[contains(@href, "/brand/") and contains(@class, "company")]')
         if company_nodes:
             company_name = re.sub(r"\s+", " ", company_nodes[0].text_content()).strip()
 

@@ -101,38 +101,59 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     salary_status = SalaryStatus.NOT_PROVIDED
     salary_text = ""
 
-    # 1. Thử lấy text lương trong phạm vi container (tránh quét nhầm sang Similar Jobs bên dưới)
-    salary_nodes = []
-    if container:
-        salary_nodes = container[0].xpath(
-            './/span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | .//a[contains(@class, "sign-in-view-salary")]'
-        )
-    
-    # Fallback an toàn trên toàn tree nếu container không bắt được
-    if not salary_nodes:
-        salary_nodes = tree.xpath(
-            '//span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | //a[contains(@class, "sign-in-view-salary")]'
-        )
+    # [FIX] Ưu tiên đọc "salary_range" từ JSON data layer (data-jobs--save-data-layer-value)
+    # TRƯỚC KHI dò HTML node theo class. Đây là cùng 1 cơ chế đang chạy đúng cho
+    # title/company_name/locations ở trên -- đáng tin hơn dò class CSS (class có thể đổi
+    # theo layout, nhưng data layer là dữ liệu JS render dùng nội bộ, ổn định hơn).
+    # Đã verify trên HTML thật (2 job CIC): field này tồn tại, có giá trị "You'll love it"
+    # -- placeholder marketing của chính ITviec khi nhà tuyển dụng không muốn tiết lộ số,
+    # KHÔNG phải dấu hiệu site đổi giao diện hay bị đăng xuất (trang không hề có chữ
+    # "Sign in to view salary" ở case này). Bản trước bỏ sót nhánh đọc json_data này khi
+    # refactor "gom text thô cho Bước 4", khiến mọi job dùng kiểu placeholder này bị ghi
+    # nhận sai thành NOT_PROVIDED dù trang có hiển thị thông tin (dù không phải số).
+    if json_data:
+        salary_text = (json_data.get("salary_range") or "").strip()
 
-    if salary_nodes:
-        salary_text = _extract_text(salary_nodes[0])
+    # 1. Fallback: dò trong phạm vi container (tránh quét nhầm sang Similar Jobs bên dưới)
+    #    -- chỉ chạy khi JSON data layer không có/rỗng.
+    if not salary_text:
+        salary_nodes = []
+        if container:
+            salary_nodes = container[0].xpath(
+                './/span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | .//a[contains(@class, "sign-in-view-salary")]'
+            )
 
-    # 2. Nếu không thấy node sign-in, thử tìm các thẻ hiển thị lương thông thường
-    if not salary_text and container:
-        salary_range_nodes = container[0].xpath('.//div[contains(@class, "salary")]//span | .//span[contains(@class, "salary")]')
-        if salary_range_nodes:
-            salary_text = _extract_text(salary_range_nodes[0])
+        # Fallback an toàn trên toàn tree nếu container không bắt được
+        if not salary_nodes:
+            salary_nodes = tree.xpath(
+                '//span[contains(@class, "sign-in-view-salary") or contains(text(), "Sign in to view salary")] | //a[contains(@class, "sign-in-view-salary")]'
+            )
 
-    # 3. Phân loại trạng thái lương cơ bản (Đã fix lỗi case-sensitivity của "đăng nhập")
+        if salary_nodes:
+            salary_text = _extract_text(salary_nodes[0])
+
+        # 2. Nếu vẫn không thấy, thử tìm các thẻ hiển thị lương thông thường
+        if not salary_text and container:
+            salary_range_nodes = container[0].xpath('.//div[contains(@class, "salary")]//span | .//span[contains(@class, "salary")]')
+            if salary_range_nodes:
+                salary_text = _extract_text(salary_range_nodes[0])
+
+    # 3. Phân loại trạng thái lương
     cleaned_salary = salary_text.strip().lower()
     if not cleaned_salary:
         salary_status = SalaryStatus.NOT_PROVIDED
     elif "sign in" in cleaned_salary or "đăng nhập" in cleaned_salary:
         salary_status = SalaryStatus.AUTH_GATED
-    elif cleaned_salary in ("thoả thuận", "thỏa thuận", "negotiable"):
+    elif not re.search(r"\d", cleaned_salary):
+        # [FIX] Trước đây chỉ nhận diện negotiable qua danh sách cứng
+        # ("thoả thuận", "thỏa thuận", "negotiable") -- bỏ sót mọi câu copy khác
+        # ITviec có thể dùng (đã thấy thật: "You'll love it"). Đổi sang tiêu chí
+        # tổng quát: chuỗi KHÔNG chứa chữ số thì chắc chắn không phải 1 mức lương cụ
+        # thể, bất kể nó viết gì -- tự động chịu được khi ITviec đổi câu copy trong
+        # tương lai mà không cần sửa code mỗi lần.
         salary_status = SalaryStatus.NEGOTIABLE
     else:
-        # Nếu có chuỗi văn bản lương cụ thể (VD: "1000 - 2000 USD")
+        # Có chuỗi văn bản lương cụ thể chứa số (VD: "1000 - 2000 USD")
         salary_status = SalaryStatus.DISCLOSED
 
     description_raw = ""
