@@ -3,8 +3,6 @@ from typing import Any, Optional
 from datetime import datetime 
 from lxml import html
 
-from types import SimpleNamespace
-
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
 from pipeline.tools.date_parser import parse_vietnamese_date
@@ -105,6 +103,75 @@ def _extract_header_list_info(tree) -> dict[str, str]:
     return result
 
 
+def _extract_label_value_pairs(tree, item_class: str, label_class: str, value_class: str) -> dict[str, str]:
+    """[MỚI] Đọc cặp label/value dạng "Nhãn: Giá trị" theo 1 class item bọc ngoài —
+    dùng chung cho 2 cấu trúc khác nhau trên trang /brand/ (general-information-data
+    và basic-information-item), tránh viết lặp lại logic duyệt y hệt 2 lần."""
+    result: dict[str, str] = {}
+    items = tree.xpath(f'//div[{_has_class(item_class)}]')
+    for item in items:
+        label_node = item.xpath(f'.//div[{_has_class(label_class)}]')
+        value_node = item.xpath(f'.//div[{_has_class(value_class)}]')
+        if label_node and value_node:
+            label_text = _extract_text(label_node[0])
+            result[label_text] = _extract_text(value_node[0])
+    return result
+
+
+def _extract_brand_page_boxes(tree) -> dict[str, str]:
+    """[MỚI] Template /brand/ (VD www.topcv.vn/brand/{slug}/tuyen-dung/...) dùng
+    class hoàn toàn khác /viec-lam/ cho khối Mô tả/Yêu cầu/Quyền lợi/Địa điểm —
+    đã verify trên HTML thật job 2237041 (FPT Software): premium-job-description__box,
+    title qua h2.premium-job-description__box--title, nội dung qua
+    .premium-job-description__box--content. Lưu ý benefit ở đây ghi "Quyền lợi được
+    hưởng" (khác "Quyền lợi ứng viên" của /viec-lam/) nên phải check riêng."""
+    result: dict[str, str] = {}
+    boxes = tree.xpath(f'//div[{_has_class("premium-job-description__box")}]')
+    for box in boxes:
+        title_node = box.xpath(f'.//*[{_has_class("premium-job-description__box--title")}]')
+        title_text = _extract_text(title_node[0]) if title_node else ""
+        content_node = box.xpath(f'.//*[{_has_class("premium-job-description__box--content")}]')
+        content_text = _clean_whitespace(_extract_text(content_node[0])) if content_node else ""
+
+        if "Mô tả công việc" in title_text and content_text:
+            result["description_raw"] = content_text
+        elif "Yêu cầu ứng viên" in title_text and content_text:
+            result["requirements_raw"] = content_text
+        elif "Quyền lợi" in title_text and content_text:
+            result["benefits_raw"] = content_text
+        elif "Địa điểm làm việc" in title_text:
+            # Nội dung địa điểm không nằm trong node "--content" như các box khác, mà
+            # là các <div> con trực tiếp -- lấy toàn bộ text() của box, trừ title.
+            # HTML gốc có ký tự "-" bullet thô ngay đầu mỗi dòng (vd "- Hồ Chí Minh: ...")
+            # -- dọn đi để nhất quán với locations của /viec-lam/ (không có bullet).
+            loc_divs = box.xpath('./div/div')
+            locs = [re.sub(r'^[-\s]+', '', _extract_text(d)) for d in loc_divs if _extract_text(d)]
+            locs = [l for l in locs if l]
+            if locs:
+                result["locations"] = locs
+    return result
+
+
+def _extract_brand_page_skill_tags(tree) -> list[str]:
+    """[MỚI] Trang /brand/ không có cấu trúc "Kỹ năng cần có/nên có" (div.required-tag)
+    như /viec-lam/ -- chỉ có nhóm tag "Chuyên môn:" (VD "Chuyên môn Data Engineer",
+    "IT - Phần mềm"), mang tính CHUYÊN NGÀNH hơn là kỹ năng kỹ thuật cụ thể. Map vào
+    skills_industry_raw (không phải skills_required_raw) vì gần nghĩa "Kiến thức ngành"
+    nhất trong 3 field hiện có của topcv -- kỹ năng kỹ thuật thật (Python, Pyspark...)
+    chỉ nằm trong requirements_raw dạng văn xuôi, sẽ được Giai đoạn 2 (text-mining) bắt
+    qua union tag+text, không cần ép vào đây."""
+    groups = tree.xpath(f'//div[{_has_class("job-tags__group")}]')
+    for group in groups:
+        name_node = group.xpath(f'.//div[{_has_class("job-tags__group-name")}]')
+        name_text = _extract_text(name_node[0]) if name_node else ""
+        if "Chuyên môn" in name_text:
+            tags = group.xpath('.//a[contains(@class, "search-from-tag")]')
+            tag_texts = [_extract_text(t) for t in tags if _extract_text(t)]
+            if tag_texts:
+                return tag_texts
+    return []
+
+
 def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     tree = _fromstring(raw.raw_html_detail)
 
@@ -184,6 +251,23 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         elif "Quyền lợi ứng viên" in title_text and text_value:
             benefits_raw = text_value
 
+    # [MỚI] Fallback duy nhất cho toàn bộ description/requirements/benefits/locations
+    # của template /brand/ — chỉ chạy khi selector /viec-lam/ ở trên không bắt được gì,
+    # đã verify bằng HTML thật (job 2237041, FPT Software): cả 4 field này đều rỗng
+    # trên trang /brand/ trước khi có fallback này.
+    brand_boxes = _extract_brand_page_boxes(tree)
+    if not description_raw and brand_boxes.get("description_raw"):
+        description_raw = brand_boxes["description_raw"]
+    if not requirements_raw and brand_boxes.get("requirements_raw"):
+        requirements_raw = brand_boxes["requirements_raw"]
+    if not benefits_raw and brand_boxes.get("benefits_raw"):
+        benefits_raw = brand_boxes["benefits_raw"]
+    if not locations and brand_boxes.get("locations"):
+        for loc in brand_boxes["locations"]:
+            if loc not in seen_locs:
+                seen_locs.add(loc)
+                locations.append(loc)
+
     # --- Work mode ---
     work_mode = None
     general_info_items = tree.xpath(f'//div[{_has_class("box-job-information-general-info-list__item")}]')
@@ -204,12 +288,37 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
     salary_nodes = tree.xpath('//span[contains(@class, "box-header-job__salary--title")]')
     if salary_nodes:
         salary_text = salary_nodes[0].text_content().strip()
-    
+
+    # [MỚI] Fallback lương + hình thức làm việc + kinh nghiệm cho template /brand/ —
+    # cấu trúc thật (job 2237041): div.basic-information-item chứa cặp
+    # "Mức lương"/"Địa điểm"/"Kinh nghiệm", div.general-information-data chứa
+    # "Hình thức làm việc"/"Cấp bậc"... Class "box-header-job__salary--title" hoàn toàn
+    # không tồn tại trên trang /brand/ (đã grep xác nhận), nên salary_text luôn rỗng
+    # nếu không có nhánh này.
+    basic_info = _extract_label_value_pairs(
+        tree, "basic-information-item", "basic-information-item__data--label", "basic-information-item__data--value"
+    )
+    general_info = _extract_label_value_pairs(
+        tree, "general-information-data", "general-information-data__label", "general-information-data__value"
+    )
+    if not salary_text and basic_info.get("Mức lương"):
+        salary_text = basic_info["Mức lương"]
+    if work_mode is None and general_info.get("Hình thức làm việc"):
+        work_mode = _map_work_mode(general_info["Hình thức làm việc"])
+
     # Chỉ lấy status, không parse số ở đây nữa
     salary_status = _get_salary_status(salary_text)
 
     # --- Kinh nghiệm / Hạn ứng tuyển ---
     header_info = _extract_header_list_info(tree)
+    if "experience_raw" not in header_info and basic_info.get("Kinh nghiệm"):
+        header_info["experience_raw"] = basic_info["Kinh nghiệm"]
+    if "deadline_raw" not in header_info:
+        deadline_nodes = tree.xpath('//*[contains(@class, "job-detail__info--deadline-date")]')
+        if deadline_nodes:
+            deadline_text = _extract_text(deadline_nodes[0])
+            if deadline_text:
+                header_info["deadline_raw"] = deadline_text
 
     # --- Skills ---
     skills_required: list[str] = []
@@ -230,6 +339,17 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
             skills_nice_to_have.extend(skills)
         elif "Kiến thức ngành" in title_text:
             skills_industry.extend(skills)
+
+    # [MỚI] Template /brand/ không có div.required-tag -- chỉ có nhóm tag "Chuyên môn:"
+    # (vd "Chuyên môn Data Engineer", "IT - Phần mềm"), gần nghĩa "Kiến thức ngành" hơn
+    # là "Kỹ năng cần có" nên map vào skills_industry_raw, KHÔNG map vào skills_required_raw
+    # để tránh trộn lẫn 2 loại thông tin khác bản chất (chuyên ngành công việc vs kỹ năng
+    # kỹ thuật cụ thể). Kỹ năng kỹ thuật thật (Python, Pyspark...) vẫn có trong
+    # requirements_raw dạng văn xuôi, Giai đoạn 2 (text-mining) sẽ tự bắt qua union.
+    if not skills_required and not skills_nice_to_have and not skills_industry:
+        brand_industry_tags = _extract_brand_page_skill_tags(tree)
+        if brand_industry_tags:
+            skills_industry = brand_industry_tags
 
     source_extra: dict[str, Any] = {
         "salary_raw": salary_text,  # Đẩy text gốc sang đây cho Bước 4

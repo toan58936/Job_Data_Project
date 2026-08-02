@@ -125,6 +125,24 @@ def main():
     print(f"🎉 HOÀN TẤT PIPELINE!")
     print(f"📊 Thống kê: Nhận {len(raw_records)} -> Hợp lệ & Enriched: {len(enriched_records)} -> Loại bỏ: {len(rejected_records)}\n")
 
+# ==========================================
+    # BƯỚC 5: KHỬ TRÙNG LẶP (DEDUPLICATION)
+    # ==========================================
+    print(f"[5/6] Đang khử trùng lặp chéo nguồn (Deduplication)...")
+    from pipeline.pipeline_steps.cross_source_dedupe import deduplicate
+    
+    deduped_records = deduplicate(enriched_records)
+    print(f"      -> Giảm từ {len(enriched_records)} xuống {len(deduped_records)} bản ghi duy nhất (Golden Records).")
+
+    # ==========================================
+    # BƯỚC 6: LƯU TRỮ VÀO DATA LAKE (PARQUET)
+    # ==========================================
+    print(f"[6/6] Đang lưu trữ dữ liệu vào Parquet Partition...")
+    from pipeline.store.duckdb_store import store_to_parquet
+    
+    parquet_path = store_to_parquet(deduped_records, batch_date)
+    if parquet_path:
+        print(f"      ✅ Đã lưu Checkpoint cuối: {parquet_path}")
 
 if __name__ == "__main__":
     main()
