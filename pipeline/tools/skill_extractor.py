@@ -3,6 +3,7 @@ from typing import Any, Optional
 from pipeline.config.skills_taxonomy import SKILLS_TAXONOMY
 from pipeline.tools.vocab_gap_logger import log_unrecognized_skill
 
+
 def _build_alias_lower_map() -> dict[str, str]:
     alias_map: dict[str, str] = {}
     for entry in SKILLS_TAXONOMY.values():
@@ -12,12 +13,18 @@ def _build_alias_lower_map() -> dict[str, str]:
     return alias_map
 
 
-_ALIAS_LOWER_MAP = _build_alias_lower_map()
+def _build_case_sensitive_alias_set() -> set[str]:
+    """[SỬA] Trước đây filter case-sensitive áp theo ĐỘ DÀI chuỗi match (len(span)==2),
+    vô tình bắt luôn alias "ML" (machine-learning) dù alias đó chưa từng cần case-sensitive
+    -- đã verify: 4/10 job topcv, 4/7 job itviec nhắc riêng lẻ "ML" bị mất hẳn Machine
+    Learning. Giờ khai báo tường minh CHỈ alias "AI" cần case đúng (do va chạm đại từ tiếng
+    Việt "ai"), lấy từ 1 set cấu hình rõ ràng thay vì suy luận qua độ dài."""
+    return {"AI"}
 
-# Cache KeywordProcessor ở module-level: trước đây bị build lại (duyệt toàn bộ
-# SKILLS_TAXONOMY, add_keyword từng alias) MỖI LẦN gọi extract_skills() cho một
-# bản ghi rơi vào nhánh fallback. Với batch vài trăm/nghìn job, đây là chi phí CPU
-# lặp lại vô ích cho cùng 1 kết quả. Build 1 lần, dùng lại cho toàn batch.
+
+_ALIAS_LOWER_MAP = _build_alias_lower_map()
+_CASE_SENSITIVE_ALIASES = _build_case_sensitive_alias_set()
+
 _KEYWORD_PROCESSOR = None
 _NOISE_SKILLS = {
     "English",
@@ -45,14 +52,20 @@ def _get_keyword_processor():
     return _KEYWORD_PROCESSOR
 
 
-def canonicalize_skill(skill: str, source: str, job_id: str) -> Optional[str]:
-    lowered = skill.strip().lower()
+def canonicalize_skill(skill: str, source: str, job_id: str) -> str:
+    """[SỬA] Không còn trả None/xoá candidate không khớp taxonomy. Khớp -> trả canonical.
+    Không khớp -> log vào vocab_gap_logger (để phát hiện taxonomy thiếu) NHƯNG VẪN trả lại
+    chuỗi gốc đã strip, để downstream không mất tín hiệu. Trước đây trả None khiến job có
+    tag hợp lệ nhưng không khớp taxonomy (vd job "Kỹ Sư Giải Cứu Dữ Liệu", 28 tag) bị mất
+    trắng skills_all -- không phân biệt được "job không có skill" với "job có skill nhưng
+    taxonomy chưa nhận diện"."""
+    stripped = skill.strip()
+    lowered = stripped.lower()
     if lowered in _ALIAS_LOWER_MAP:
         return _ALIAS_LOWER_MAP[lowered]
-    
-    # Unrecognized skill -> log it and drop it from the clean list
+
     log_unrecognized_skill(skill, source, job_id)
-    return None
+    return stripped
 
 
 def canonicalize_skills_list(skills: list[str], source: str, job_id: str) -> list[str]:
@@ -66,37 +79,33 @@ def canonicalize_skills_list(skills: list[str], source: str, job_id: str) -> lis
     return result
 
 
-def _extract_skills_from_tags(record: Any, structure: Optional[str]) -> dict:
+def _extract_skills_from_tags(record: Any, structure: Optional[str]) -> list[str]:
     """Đọc skill từ tag có cấu trúc trong source_extra (nếu nguồn có hỗ trợ và
-    bản ghi này thực sự có điền tag). Trả về rỗng nếu không tìm thấy gì — KHÔNG
-    coi đó là lỗi, để _extract_skills_from_text() xử lý tiếp."""
+    bản ghi này thực sự có điền tag). 
+    [SỬA] Trả về 1 flat list duy nhất thay vì dict."""
     source = record.source
     job_id = record.job_id
-    
+    raw_skills = []
+
     if structure == "flat":
         raw_skills = record.source_extra.get("skills_raw", [])
-        deduped = canonicalize_skills_list(raw_skills, source, job_id)
-        return {"skills_all": deduped, "skills_required": deduped, "skills_nice_to_have": []}
+    elif structure == "grouped":
+        req = record.source_extra.get("skills_required_raw", [])
+        nice = record.source_extra.get("skills_nice_to_have_raw", [])
+        raw_skills = req + nice
 
-    if structure == "grouped":
-        req = canonicalize_skills_list(record.source_extra.get("skills_required_raw", []), source, job_id)
-        nice = canonicalize_skills_list(record.source_extra.get("skills_nice_to_have_raw", []), source, job_id)
-        return {
-            "skills_all": list(dict.fromkeys(req + nice)),
-            "skills_required": req,
-            "skills_nice_to_have": nice,
-        }
-
-    return {"skills_all": [], "skills_required": [], "skills_nice_to_have": []}
+    return canonicalize_skills_list(raw_skills, source, job_id)
 
 
-def _extract_skills_from_text(record: Any) -> dict:
+def _extract_skills_from_text(record: Any) -> list[str]:
     """Fallback: dò từ khoá kỹ năng (flashtext, theo SKILLS_TAXONOMY) trực tiếp
     trong description_raw + requirements_raw (nếu nguồn có field này trong
     source_extra — TopCV có, không phải nguồn nào cũng có nên dùng .get()).
 
-    Chỉ filter case-sensitive cho exact alias "AI" (2 ký tự), không tác động lên
-    các alias dài khác như "Generative AI"/"GenAI"."""
+    [SỬA] KHÔNG còn áp _NOISE_SKILLS ở đây -- lọc noise giờ chỉ làm 1 lần duy nhất
+    ở extract_skills() sau khi đã union tag+text, để áp dụng nhất quán cho CẢ 2
+    nhánh thay vì chỉ lọc riêng nhánh text (bug cũ: 12/46 job itviec lọt noise qua
+    nhánh tag vì _NOISE_SKILLS không hề chạm tới _extract_skills_from_tags)."""
     kp = _get_keyword_processor()
 
     text_parts = [record.description_raw or ""]
@@ -106,41 +115,41 @@ def _extract_skills_from_text(record: Any) -> dict:
     text = " ".join(text_parts)
 
     if not text.strip():
-        return {"skills_all": [], "skills_required": [], "skills_nice_to_have": []}
+        return []
 
     matches = kp.extract_keywords(text, span_info=True)
     filtered: list[str] = []
     for canonical, start, end in matches:
         span = text[start:end]
-        if len(span) == 2 and span != "AI":
+        # [SỬA] Chỉ áp điều kiện case khi span khớp (không phân biệt hoa/thường) với 1
+        # alias đã khai báo trong _CASE_SENSITIVE_ALIASES (hiện chỉ có "AI") -- lúc đó
+        # bắt buộc span phải TRÙNG NGUYÊN VĂN alias mới được chấp nhận (span="Ai"/"ai"
+        # bị loại, span="AI" thì giữ). Match của canonical khác (vd "ML", "Kafka") không
+        # đi qua nhánh này nên không còn bị bắt nhầm như bản trước.
+        if span.lower() in {a.lower() for a in _CASE_SENSITIVE_ALIASES} and span not in _CASE_SENSITIVE_ALIASES:
             continue
         filtered.append(canonical)
 
-    deduped = list(dict.fromkeys(filtered))
-    deduped = [skill for skill in deduped if skill not in _NOISE_SKILLS]
-    return {"skills_all": deduped, "skills_required": deduped, "skills_nice_to_have": []}
+    return list(dict.fromkeys(filtered))
 
 
-def extract_skills(record: Any, registry_entry: dict) -> dict:
+def extract_skills(record: Any, registry_entry: dict) -> list[str]:
     """Trích skill cho 1 bản ghi SourceNormalized.
 
-    Luôn chạy cả nhánh tag và text, rồi union lại. Tag được ưu tiên cho phân loại
-    required / nice-to-have, còn text chỉ bổ sung khi tag rỗng hoặc thiếu phần nào.
+    Luôn chạy cả nhánh tag và text, rồi union lại. 
+    [SỬA] Trả về một mảng phẳng (flat list) duy nhất, loại bỏ sự rườm rà của dict 3 key.
+    [SỬA] _NOISE_SKILLS áp dụng 1 LẦN DUY NHẤT ở đây, sau khi đã union -- áp dụng
+    nhất quán cho cả kết quả từ tag lẫn từ text, không còn để lọt qua nhánh tag.
     """
     structure = registry_entry.get("skill_tag_structure")
 
-    tag_based = _extract_skills_from_tags(record, structure)
-    text_based = _extract_skills_from_text(record)
+    tag_based_all = _extract_skills_from_tags(record, structure)
+    text_based_all = _extract_skills_from_text(record)
 
-    skills_all = list(dict.fromkeys(tag_based["skills_all"] + text_based["skills_all"]))
-    skills_required = tag_based["skills_required"]
-    skills_nice_to_have = tag_based["skills_nice_to_have"]
+    # Union, deduplicate (giữ nguyên thứ tự) và lọc Noise Skill
+    skills_all = [
+        s for s in dict.fromkeys(tag_based_all + text_based_all)
+        if s not in _NOISE_SKILLS
+    ]
 
-    if not skills_required and not skills_nice_to_have and not tag_based["skills_all"]:
-        skills_required = text_based["skills_all"]
-
-    return {
-        "skills_all": skills_all,
-        "skills_required": skills_required,
-        "skills_nice_to_have": skills_nice_to_have,
-    }
+    return skills_all

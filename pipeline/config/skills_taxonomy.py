@@ -60,6 +60,30 @@ SKILLS_TAXONOMY: dict[str, dict[str, Any]] = {
     "pentaho": {"canonical": "Pentaho", "aliases": ["Pentaho"]},
     "hbase": {"canonical": "HBase", "aliases": ["HBase"]},
     "cassandra": {"canonical": "Cassandra", "aliases": ["Cassandra"]},
+
+    # [MỚI] GenAI / LLM / Modern Data Stack -- bổ sung theo yêu cầu: Giai đoạn 1 đã giữ
+    # nguyên các cụm "Vector Database", "RAG", "embeddings" nhà tuyển dụng gõ, nhưng
+    # taxonomy trước đây chưa biết các từ này nên vẫn "mù" dù dữ liệu thô đã có sẵn.
+    "llm": {"canonical": "LLM", "aliases": ["LLM", "LLMs", "Large Language Model", "Large Language Models"]},
+    "agentic-ai": {"canonical": "Agentic AI", "aliases": ["Agentic AI", "AI Agent", "AI Agents"]},
+    "rag": {"canonical": "RAG", "aliases": ["RAG", "Retrieval-Augmented Generation", "Retrieval Augmented Generation"]},
+    "prompt-engineering": {"canonical": "Prompt Engineering", "aliases": ["Prompt Engineering"]},
+    "embeddings": {"canonical": "Embeddings", "aliases": ["Embeddings", "Embedding"]},
+    "vector-database": {"canonical": "Vector Database", "aliases": ["Vector Database", "Vector DB", "Vector Databases"]},
+    "langchain": {"canonical": "LangChain", "aliases": ["LangChain", "Langchain"]},
+    "llamaindex": {"canonical": "LlamaIndex", "aliases": ["LlamaIndex", "Llama Index"]},
+    "openai-api": {"canonical": "OpenAI API", "aliases": ["OpenAI API", "OpenAI"]},
+    "huggingface": {"canonical": "Hugging Face", "aliases": ["Hugging Face", "HuggingFace"]},
+    "fine-tuning": {"canonical": "Fine-tuning", "aliases": ["Fine-tuning", "Finetuning", "Fine tuning"]},
+    "pinecone": {"canonical": "Pinecone", "aliases": ["Pinecone"]},
+    "weaviate": {"canonical": "Weaviate", "aliases": ["Weaviate"]},
+    "milvus": {"canonical": "Milvus", "aliases": ["Milvus"]},
+    "chromadb": {"canonical": "ChromaDB", "aliases": ["ChromaDB", "Chroma DB", "Chroma"]},
+    "iceberg": {"canonical": "Apache Iceberg", "aliases": ["Apache Iceberg", "Iceberg"]},
+    "delta-lake": {"canonical": "Delta Lake", "aliases": ["Delta Lake", "DeltaLake"]},
+    "dagster": {"canonical": "Dagster", "aliases": ["Dagster"]},
+    "fivetran": {"canonical": "Fivetran", "aliases": ["Fivetran"]},
+    "trino": {"canonical": "Trino", "aliases": ["Trino"]},
 }
 
 
