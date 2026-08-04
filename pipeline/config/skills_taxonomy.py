@@ -84,6 +84,95 @@ SKILLS_TAXONOMY: dict[str, dict[str, Any]] = {
     "dagster": {"canonical": "Dagster", "aliases": ["Dagster"]},
     "fivetran": {"canonical": "Fivetran", "aliases": ["Fivetran"]},
     "trino": {"canonical": "Trino", "aliases": ["Trino"]},
+
+
+    # ============================================================
+    # [MỚI] Bổ sung theo dữ liệu THẬT từ unrecognized_skills.jsonl
+    # (tần suất ≥ 13) + danh sách P0 trong elt_audit_report.md.
+    # Đây là phương pháp gán nhãn: đọc dữ liệu thực tế, thêm vào taxonomy
+    # để giảm job_skills rỗng và thu hẹp khoảng trống vocab.
+    # ============================================================
+
+    # --- IaC / DevOps / Monitoring ---
+    "terraform": {"canonical": "Terraform", "aliases": ["Terraform", "Terraform Cloud"]},
+    "pulumi": {"canonical": "Pulumi", "aliases": ["Pulumi"]},
+    "devops": {"canonical": "DevOps", "aliases": ["DevOps", "Dev Ops"]},
+    "grafana": {"canonical": "Grafana", "aliases": ["Grafana"]},
+    "prometheus": {"canonical": "Prometheus", "aliases": ["Prometheus"]},
+    "datadog": {"canonical": "Datadog", "aliases": ["Datadog"]},
+    "monitoring": {"canonical": "Monitoring", "aliases": ["Monitoring", "Monitoring Tools"]},
+    "observability": {"canonical": "Observability", "aliases": ["Observability"]},
+    "gitops": {"canonical": "GitOps", "aliases": ["GitOps"]},
+    "gitlab-ci": {"canonical": "GitLab CI", "aliases": ["GitLab CI", "Gitlab CI", "GitLab CI/CD"]},
+    "linux": {"canonical": "Linux", "aliases": ["Linux", "Linux Server"]},
+
+    # --- Ngôn ngữ lập trình / Framework ---
+    "rust": {"canonical": "Rust", "aliases": ["Rust"]},
+    "golang": {"canonical": "Go", "aliases": ["GoLang", "Golang", "Go Language"]},
+    "javascript": {"canonical": "JavaScript", "aliases": ["JavaScript", "Javascript", "JS", "Node.js", "NodeJS", "Node Js"]},
+    "typescript": {"canonical": "TypeScript", "aliases": ["TypeScript", "Typescript", "TS"]},
+    "react": {"canonical": "React", "aliases": ["React", "React.js", "ReactJS", "React Js"]},
+    "vue": {"canonical": "Vue.js", "aliases": ["Vue.js", "VueJS", "Vue Js", "Vue"]},
+    "angular": {"canonical": "Angular", "aliases": ["Angular", "AngularJS"]},
+    "nextjs": {"canonical": "Next.js", "aliases": ["Next.js", "NextJS", "NextJs"]},
+    "svelte": {"canonical": "Svelte", "aliases": ["Svelte", "SvelteKit"]},
+    "fastapi": {"canonical": "FastAPI", "aliases": ["FastAPI", "Fast Api"]},
+    "spring": {"canonical": "Spring", "aliases": ["Spring", "Spring Boot", "SpringBoot"]},
+    "cpp": {"canonical": "C++", "aliases": ["C++", "Cpp"]},
+    "csharp": {"canonical": "C#", "aliases": ["C#", "CSharp"]},
+    "microservices": {"canonical": "Microservices", "aliases": ["Microservices", "Microservice", "Micro Service"]},
+    "elasticsearch": {"canonical": "Elasticsearch", "aliases": ["Elasticsearch", "Elastic Search"]},
+
+    # --- AI / ML / Data Science ---
+    "numpy": {"canonical": "NumPy", "aliases": ["NumPy", "Numpy"]},
+    "pytorch": {"canonical": "PyTorch", "aliases": ["PyTorch", "Pytorch", "Torch"]},
+    "tensorflow": {"canonical": "TensorFlow", "aliases": ["TensorFlow", "Tensorflow", "TF"]},
+    "opencv": {"canonical": "OpenCV", "aliases": ["OpenCV"]},
+    "playwright": {"canonical": "Playwright", "aliases": ["Playwright"]},
+    "data-science": {"canonical": "Data Science", "aliases": ["Data Science", "DataScience", "Khoa Học Dữ Liệu"]},
+    "data-analysis": {"canonical": "Data Analysis", "aliases": ["Data Analysis"]},
+    "chatbot": {"canonical": "Chatbot", "aliases": ["Chatbot", "Chat Bot"]},
+
+    # --- BI / Analytics / Visualization ---
+    "tableau": {"canonical": "Tableau", "aliases": ["Tableau"]},
+    "bigquery": {"canonical": "BigQuery", "aliases": ["BigQuery", "Google BigQuery", "Big Query"]},
+    "quicksight": {"canonical": "QuickSight", "aliases": ["QuickSight", "Amazon QuickSight"]},
+    "looker": {"canonical": "Looker", "aliases": ["Looker"]},
+    "metabase": {"canonical": "Metabase", "aliases": ["Metabase"]},
+    "streamlit": {"canonical": "Streamlit", "aliases": ["Streamlit"]},
+    "appsflyer": {"canonical": "AppsFlyer", "aliases": ["AppsFlyer", "Appsflyer"]},
+
+    # --- Databases / Data Engineering ---
+    "oracle": {"canonical": "Oracle", "aliases": ["Oracle", "Oracle Database", "Oracle DB"]},
+    "pyspark": {"canonical": "PySpark", "aliases": ["PySpark", "Pyspark"]},
+    "airbyte": {"canonical": "Airbyte", "aliases": ["Airbyte"]},
+    "debezium": {"canonical": "Debezium", "aliases": ["Debezium"]},
+    "openmetadata": {"canonical": "OpenMetadata", "aliases": ["OpenMetadata"]},
+    "n8n": {"canonical": "n8n", "aliases": ["n8n", "N8n"]},
+    "apache-hudi": {"canonical": "Apache Hudi", "aliases": ["Apache Hudi", "Hudi"]},
+    "great-expectations": {"canonical": "Great Expectations", "aliases": ["Great Expectations", "GreatExpectations"]},
+    "monte-carlo": {"canonical": "Monte Carlo", "aliases": ["Monte Carlo"]},
+    "datalake": {"canonical": "Data Lake", "aliases": ["Data Lake", "Datalake", "DataLake"]},
+    "data-pipeline": {"canonical": "Data Pipeline", "aliases": ["Data Pipeline", "Data pipeline"]},
+    "data-quality": {"canonical": "Data Quality", "aliases": ["Data Quality", "Data Quality Tools"]},
+    "data-governance": {"canonical": "Data Governance", "aliases": ["Data Governance", "data governance"]},
+    "data-mart": {"canonical": "Data Mart", "aliases": ["Data Mart", "Data Marts"]},
+    "star-schema": {"canonical": "Star Schema", "aliases": ["Star schema", "Star Schema"]},
+    "cdc": {"canonical": "CDC", "aliases": ["CDC", "Change Data Capture"]},
+    "batch-processing": {"canonical": "Batch Processing", "aliases": ["Batch Processing"]},
+    "streaming-processing": {"canonical": "Streaming Processing", "aliases": ["Streaming Processing", "Streaming"]},
+    "relational-databases": {"canonical": "Relational Databases", "aliases": ["Relational Databases", "Relational database"]},
+    "rest-apis": {"canonical": "REST APIs", "aliases": ["REST APIs", "REST API", "Restful API"]},
+    "sqlalchemy": {"canonical": "SQLAlchemy", "aliases": ["SQLAlchemy"]},
+    "pydantic": {"canonical": "Pydantic", "aliases": ["Pydantic"]},
+    "firebase": {"canonical": "Firebase", "aliases": ["Firebase"]},
+
+    # --- Chung / Cross-cutting ---
+    "api": {"canonical": "API", "aliases": ["API", "Rest API", "APIs"]},
+    "cloud": {"canonical": "Cloud", "aliases": ["Cloud", "Cloud Services", "Cloud Computing"]},
+    "json": {"canonical": "JSON", "aliases": ["JSON", "Json"]},
+    "agile": {"canonical": "Agile", "aliases": ["Agile", "Scrum"]},
+    "software-architecture": {"canonical": "Software Architecture", "aliases": ["Software Architecture", "Solution Architecture"]},
 }
 
 

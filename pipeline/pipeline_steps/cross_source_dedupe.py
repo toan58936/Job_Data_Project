@@ -38,6 +38,31 @@ def _locations_overlap(loc1: List[str], loc2: List[str]) -> bool:
     return len(set(loc1).intersection(set(loc2))) > 0
 
 
+def _salary_compatible(job1: JobPosting, job2: JobPosting, max_diff_ratio: float = 0.5) -> bool:
+    """[FIX P2] Dùng salary range làm tín hiệu phụ để tránh gộp nhầm 2 job cùng
+    title/công ty nhưng khác level/seniority (vd "Software Engineer" Junior 15-20tr
+    vs Senior 40-55tr). Nếu 1 trong 2 job không có lương (None/negotiable) thì
+    không có đủ tín hiệu để chặn — coi như tương thích.
+
+    Logic: nếu CẢ 2 đều có salary_min/max, so sánh khoảng trung bình. Nếu chênh
+    lệch > max_diff_ratio (default 50%) → KHÔNG gộp (2 job khác level).
+    """
+    def _mid(j: JobPosting) -> float | None:
+        if j.salary_min is None and j.salary_max is None:
+            return None
+        lo = j.salary_min if j.salary_min is not None else j.salary_max
+        hi = j.salary_max if j.salary_max is not None else j.salary_min
+        return (lo + hi) / 2.0
+
+    m1 = _mid(job1)
+    m2 = _mid(job2)
+    if m1 is None or m2 is None:
+        return True  # Thiếu dữ liệu lương → không sử dụng tín hiệu này
+    if m1 == 0 or m2 == 0:
+        return True
+    return abs(m1 - m2) / max(m1, m2) <= max_diff_ratio
+
+
 def _merge_records(master: JobPosting, duplicate: JobPosting) -> JobPosting:
     """Hợp nhất dữ liệu: Master nuốt trọn Skills/Locations của Duplicate."""
     # Gộp tập kỹ năng (Loại bỏ trùng lặp bằng set)
@@ -91,9 +116,13 @@ def deduplicate(records: List[JobPosting], similarity_threshold: float = 0.8) ->
                     continue
                 candidate = group[j]
 
-                # Nếu tiêu đề giống nhau >= 80% VÀ có chung địa điểm
+                # Nếu tiêu đề giống nhau >= 80% VÀ có chung địa điểm VÀ lương tương thích
                 if _title_similarity(master.title, candidate.title) >= similarity_threshold:
                     if _locations_overlap(master.locations, candidate.locations):
+                        # [FIX P2] Bổ sung tín hiệu salary: không gộp nhầm 2 job cùng
+                        # title/công ty nhưng khác level (lương chênh > 50%).
+                        if not _salary_compatible(master, candidate):
+                            continue
                         # Bầu Master: Job nào mô tả chi tiết hơn sẽ làm gốc
                         if len(candidate.description_raw) > len(master.description_raw):
                             master, candidate = candidate, master

@@ -85,12 +85,21 @@ def parse_absolute_vietnamese(text: str) -> Optional[date]:
         return None
 
 
-def parse_vietnamese_date(text: str, reference_date: date) -> Optional[date]:
+def parse_vietnamese_date(text: str, reference_date: date, allow_future: bool = False) -> Optional[date]:
     """Điểm vào chính — thử tuyệt đối trước (rẻ, không mơ hồ), rồi mới thử
     tương đối. Dùng hàm này ở pipeline_steps/ thay vì gọi trực tiếp 2 hàm con,
     trừ khi caller đã biết chắc định dạng (ví dụ posted_date_raw luôn tương
-    đối, deadline luôn tuyệt đối) và muốn báo lỗi sớm nếu sai định dạng."""
+    đối, deadline luôn tuyệt đối) và muốn báo lỗi sớm nếu sai định dạng.
+
+    [FIX P2] Thêm guard `allow_future` (mặc định False = dùng cho posted_date):
+    nếu chuỗi ngày tuyệt đối parse ra NẰM TRONG TƯƠNG LAI so với reference_date,
+    coi là INVALID (trả None). TopCV đôi khi lẫn ngày "Hạn ứng tuyển" (deadline,
+    luôn ở tương lai) vào posted_date_raw — allow_future=False sẽ chặn case này,
+    tránh ghi ngày đăng trong tương lai (audit anomaly #9). Với field thật sự là
+    ngày tương lai (application_deadline) thì truyền allow_future=True."""
     absolute = parse_absolute_vietnamese(text)
     if absolute is not None:
+        if not allow_future and absolute > reference_date:
+            return None
         return absolute
     return parse_relative_vietnamese(text, reference_date)

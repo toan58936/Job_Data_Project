@@ -38,7 +38,7 @@ def store_to_parquet(records: List[JobPosting], batch_date: str, data_root: Path
     partition_dir = data_root / f"year={year}" / f"month={month}"
     partition_dir.mkdir(parents=True, exist_ok=True)
 
-    file_path = partition_dir / f"jobs_{batch_date}.parquet"
+    file_path = partition_dir / f"jobs_{records[0].source}_{batch_date}.parquet"
 
     # 4. Ghi file Parquet (sử dụng engine pyarrow)
     df.to_parquet(file_path, index=False, engine="pyarrow", compression="snappy")

@@ -294,7 +294,9 @@ def parse(raw: RawRecord) -> SourceNormalized:
 
     posted_date_raw = data.get("posted_date_raw", "")
     batch_date = datetime.strptime(raw.batch_date, "%Y-%m-%d").date()
-    posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date)
+    # [FIX P2] allow_future=False: chặn parse nhầm "Hạn ứng tuyển" (deadline, luôn
+    # ở tương lai) thành ngày đăng — tránh ghi posted_date trong tương lai (audit #9).
+    posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date, allow_future=False)
 
     if posted_date_parsed:
         data["source_extra"]["posted_date_parsed"] = posted_date_parsed.isoformat()

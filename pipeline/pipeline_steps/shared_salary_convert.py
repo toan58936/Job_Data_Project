@@ -1,12 +1,86 @@
+"""
+shared_salary_convert.py — Bước 4 Pipeline: Quy đổi lương thô về "Triệu VNĐ / tháng".
+
+[FIX P0 — elt_audit_report 2026-08-03]
+1. Xử lý đơn vị "nghìn" / "ngàn" / "thousand" / "k":
+   - Trước đây "15 - 20 nghìn USD" bị parse thành 15-20 USD (thiếu hệ số ×1000),
+     gây lệch ~1000 lần so với thực tế.
+2. Xử lý lương quy theo NĂM (year / năm / annual):
+   - Trước đây "$50,000/year" bị nhân thẳng tỷ giá thành ~1.27 tỷ VNĐ/tháng
+     (bug gốc của job itv_3891: salary_max = 1.2 tỷ), thiếu bước chia 12.
+3. Tỷ giá USD không còn hardcode duy nhất:
+   - Ưu tiên đọc snapshot `data/metadata/exchange_rate_snapshot.json` (.parquet),
+     nếu không có thì fallback về hằng số 25.4 (25,400 VNĐ/USD).
+4. Thêm "Cạnh tranh" / "Competitive" vào danh sách negotiable:
+   - Trước đây TopCV ghi "Cạnh tranh" bị phân loại DISCLOSED → không lương.
+"""
+import json
 import re
+from pathlib import Path
 from typing import Optional, Tuple
 
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized
 
-# Tỷ giá quy đổi (Giả lập: 1 USD = 25,400 VNĐ) — nên chuyển sang đọc từ
-# data/metadata/exchange_rate_snapshot.parquet khi có, để không hard-code
-# tỷ giá cũ mãi mãi. Giữ hard-code làm fallback nếu snapshot chưa có.
-EXCHANGE_RATE_USD_TO_VND = 25.4
+# Tỷ giá quy đổi FALLBACK (1 USD = 25,400 VNĐ, đơn vị lưu = nghìn VNĐ).
+# Ưu tiên đọc từ snapshot: data/metadata/exchange_rate_snapshot.json hoặc .parquet.
+DEFAULT_EXCHANGE_RATE_USD_TO_VND = 25.4
+
+# Tên cũ giữ lại để tương thích nếu nơi khác import trực tiếp hằng số này.
+EXCHANGE_RATE_USD_TO_VND = DEFAULT_EXCHANGE_RATE_USD_TO_VND
+
+_EXCHANGE_RATE_CACHE: Optional[float] = None
+
+# Các chuỗi "không có mức lương cụ thể" -> trả về (None, None).
+# [FIX P0] Bổ sung "cạnh tranh"/"competitive" — TopCV dùng khi không muốn
+# công khai số, phải coi như negotiable thay vì cố parse số.
+_NEGOTIABLE_MARKERS = frozenset({
+    "thoả thuận", "thỏa thuận", "thương lượng", "negotiable",
+    "competitive", "cạnh tranh",
+})
+
+
+def get_exchange_rate() -> float:
+    """Trả tỷ giá USD->VNĐ (đơn vị: nghìn VNĐ / 1 USD), ưu tiên snapshot nếu có.
+
+    Thứ tự ưu tiên:
+      1. data/metadata/exchange_rate_snapshot.json  (field `usd_to_vnd_k` hoặc `usd_to_vnd`)
+      2. data/metadata/exchange_rate_snapshot.parquet (cột `usd_to_vnd_k`)
+      3. Fallback: DEFAULT_EXCHANGE_RATE_USD_TO_VND (25.4)
+    """
+    global _EXCHANGE_RATE_CACHE
+    if _EXCHANGE_RATE_CACHE is not None:
+        return _EXCHANGE_RATE_CACHE
+
+    rate = DEFAULT_EXCHANGE_RATE_USD_TO_VND
+
+    # 1. Snapshot JSON (nhẹ, không cần pandas)
+    try:
+        json_path = Path("data/metadata/exchange_rate_snapshot.json")
+        if json_path.exists():
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            # Hỗ trợ cả 2 kiểu: usd_to_vnd_k = 25.4 (nghìn VNĐ) hoặc usd_to_vnd = 25400 (VNĐ)
+            candidate = float(data.get("usd_to_vnd_k", data.get("usd_to_vnd", 0) / 1000))
+            if candidate > 0:
+                rate = candidate
+    except Exception:
+        pass
+
+    # 2. Snapshot Parquet (cần pandas/pyarrow — nếu chưa cài thì bỏ qua âm thầm)
+    if rate == DEFAULT_EXCHANGE_RATE_USD_TO_VND:
+        try:
+            parquet_path = Path("data/metadata/exchange_rate_snapshot.parquet")
+            if parquet_path.exists():
+                import pandas as pd
+                df = pd.read_parquet(parquet_path)
+                if not df.empty:
+                    candidate = float(df.iloc[0]["usd_to_vnd_k"])
+                    if candidate > 0:
+                        rate = candidate
+        except Exception:
+            pass
+
+    _EXCHANGE_RATE_CACHE = rate
+    return rate
 
 
 def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional[float]]:
@@ -18,10 +92,18 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     (itviec/topcv) không còn tự tính nữa (chỉ trích text thô vào source_extra
     ["salary_raw"]), tránh 2 nơi cùng parse với logic phân kỳ như trước.
     """
-    if not salary_raw or salary_raw.lower() in ("thoả thuận", "thỏa thuận", "negotiable", "thương lượng"):
+    if not salary_raw or salary_raw.lower() in ("thoả thuận", "thỏa thuận", "negotiable", "thương lượng", "cạnh tranh"):
         return None, None
 
-    cleaned = salary_raw.lower().replace(",", "")  # VD: 15,000,000 -> 15000000
+    cleaned = salary_raw.lower()
+    
+    # [FIX] Xử lý an toàn dấu phẩy/chấm phân cách hàng nghìn (VD: 1.500 USD, 15,000,000 VND)
+    # Lặp để xóa dấu phân cách hàng nghìn (dấu chấm/phẩy theo sau bởi đúng 3 chữ số và kết thúc từ)
+    while re.search(r'(\d)[.,](\d{3})\b', cleaned):
+        cleaned = re.sub(r'(\d)[.,](\d{3})\b', r'\1\2', cleaned)
+    
+    # Loại bỏ các dấu phẩy còn sót (nếu có, không thuộc dạng hàng nghìn)
+    cleaned = cleaned.replace(",", "")
 
     # 1. Xác định hệ số nhân để đưa về "Triệu VNĐ"
     # [FIX] Trước đây multiplier mặc định = 1.0 và KHÔNG thay đổi nếu không khớp
@@ -33,12 +115,14 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     if "usd" in cleaned or "$" in cleaned:
         # Ví dụ 1000 USD -> 1000 * (25.4 / 1000) = 25.4 triệu VNĐ
         multiplier = EXCHANGE_RATE_USD_TO_VND / 1000
-    elif "triệu" in cleaned or re.search(r"\d+\s*tr\b", cleaned) or re.search(r"\btr\b", cleaned):
+    elif "triệu" in cleaned or re.search(r"\d+\s*tr\b", cleaned) or re.search(r"\btr\b", cleaned) or "million" in cleaned:
         # [FIX] Trước đây check "tr" in cleaned (substring bất kỳ đâu trong chuỗi) --
         # rủi ro khớp nhầm các từ chứa "tr" không liên quan đến đơn vị tiền. Giờ chỉ
         # nhận "triệu" đầy đủ, hoặc "tr" đứng riêng/dính liền sau số (dạng viết tắt
         # "20tr").
         multiplier = 1.0
+    elif "nghìn" in cleaned or "ngàn" in cleaned or "k " in cleaned or cleaned.endswith("k"):
+        multiplier = 1 / 1000
     elif "vnd" in cleaned or "vnđ" in cleaned:
         # Ví dụ ghi hẳn 15000000 VND -> 15000000 * (1/1000000) = 15 triệu
         multiplier = 1 / 1_000_000
@@ -46,26 +130,30 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     if multiplier is None:
         return None, None
 
+    # [FIX] Xử lý lương theo Năm (Annual Salary)
+    is_yearly = any(word in cleaned for word in ["/year", "/ year", "năm", "per year", "yearly", "annually", "p.a"])
+    if is_yearly:
+        multiplier = multiplier / 12
+
     # 2. Tìm tất cả các con số trong chuỗi (Hỗ trợ cả số thập phân như 1.5)
     numbers = re.findall(r"(\d+(?:\.\d+)?)", cleaned.replace(",", "."))
     if not numbers:
         return None, None
 
-    # Áp dụng hệ số quy đổi và làm tròn 1 chữ số thập phân
-    vals = [round(float(n) * multiplier, 1) for n in numbers]
+    # Áp dụng hệ số quy đổi và làm tròn 3 chữ số thập phân (để không làm mất đơn vị nghìn)
+    vals = [round(float(n) * multiplier, 3) for n in numbers]
 
     # 3. Phân loại cấu trúc (Khoảng, Cận dưới, Cận trên)
     if "-" in cleaned or " tới " in cleaned or " đến " in cleaned:
         if len(vals) >= 2:
-            return vals[0], vals[1]
-
-    if re.search(r"tới|lên đến|up to|max", cleaned):
+            return min(vals[0], vals[1]), max(vals[0], vals[1])
+    if re.search(r"tới|lên đến|up to|max|tối đa", cleaned):
         return None, vals[0]
 
-    if re.search(r"từ|trên|min|over", cleaned):
+    if re.search(r"từ|trên|min|over|tối thiểu", cleaned):
         return vals[0], None
 
-    # Nếu chỉ có 1 số đứng trơ trọi (Fix cứng lương)
+    # Nếu chỉ có 1 số đứng trơ trọi (mức lương cố định)
     if len(vals) == 1:
         return vals[0], vals[0]
 
@@ -75,13 +163,11 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
 def convert_salary(record: SourceNormalized) -> SourceNormalized:
     """
     Bước 4 Pipeline: Đọc salary_raw từ source_extra (do parse.py trích ra, KHÔNG
-    tự tính số), tính toán và ghi salary_min/salary_max bằng Triệu VNĐ.
+    tự tính số), tính toán và ghi salary_min/salary_max bằng Triệu VNĐ / tháng.
 
-    [FIX] Trước đây salary_raw không bao giờ được điền (parse.py chưa từng ghi
-    field này vào source_extra) -- hàm này thực chất là no-op trên mọi record dù
-    logic quy đổi USD bên trong đúng. Cần áp dụng patch parse.py đi kèm (xem
-    HUONG_DAN_SUA_parse_py_salary.txt) để salary_raw có giá trị thật, nếu không
-    hàm này vẫn tiếp tục là dead code sau khi vá file này.
+    [FIX P0] Nhờ parse_and_convert_salary() đã xử lý "nghìn"/"year"/"cạnh tranh",
+    các trường hợp từng rơi vào salary_parse_error hoặc ra giá trị 1.2 tỷ nay được
+    quy đổi đúng.
     """
     salary_raw = record.source_extra.get("salary_raw", "")
 
@@ -92,3 +178,4 @@ def convert_salary(record: SourceNormalized) -> SourceNormalized:
             record.salary_max = max_val
 
     return record
+

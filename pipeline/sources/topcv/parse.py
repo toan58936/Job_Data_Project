@@ -31,11 +31,14 @@ def _get_salary_status(text: str) -> SalaryStatus:
     """
     Chỉ phân loại trạng thái lương, KHÔNG bóc tách con số ở bước này.
     Việc bóc tách và quy đổi tỷ giá sẽ do shared_salary_convert.py đảm nhiệm.
-    """
+"""
     cleaned = text.strip().lower()
     if not cleaned:
         return SalaryStatus.NOT_PROVIDED
-    if cleaned in ("thoả thuận", "thỏa thuận", "thương lượng", "negotiable"):
+    # [FIX P2] Thêm "cạnh tranh"/"competitive" — TopCV dùng khi nhà tuyển dụng
+    # không công khai số (trước đây bị phân loại DISCLOSED rồi cố parse số → rỗng).
+    if cleaned in ("thoả thuận", "thỏa thuận", "thương lượng", "negotiable",
+                   "cạnh tranh", "competitive"):
         return SalaryStatus.NEGOTIABLE
     return SalaryStatus.DISCLOSED
 
@@ -409,7 +412,9 @@ def parse(raw: RawRecord) -> SourceNormalized:
 
     # Chuyển đổi sang ngày tuyệt đối
     batch_date = datetime.strptime(raw.batch_date, "%Y-%m-%d").date()
-    posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date)
+    # [FIX P2] allow_future=False: chặn parse nhầm "Hạn ứng tuyển" (deadline, luôn
+    # ở tương lai) thành ngày đăng — tránh ghi posted_date trong tương lai (audit #9).
+    posted_date_parsed = parse_vietnamese_date(posted_date_raw, batch_date, allow_future=False)
 
     # Lưu vào source_extra
     source_extra = data["source_extra"]

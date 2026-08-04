@@ -22,3 +22,30 @@ def test_convert_full_vnd_zeros():
 def test_convert_negotiable():
     # Lương thỏa thuận -> Trả về None
     assert parse_and_convert_salary("Thoả thuận") == (None, None)
+
+# === [FIX P0] Ngăn lương 1.2 tỷ / lỗi nghìn ===
+def test_convert_annual_usd_50000_year():
+    # [FIX P0] "$50,000/year" trước đây ra 1.27 tỷ/tháng (thiếu chia 12).
+    # $50,000/năm = 50,000 * 25.4 / 12 = 105,833 VNĐ nghìn/năm -> 105.8 triệu/tháng.
+    assert parse_and_convert_salary("$50,000/year") == (105.8, 105.8)
+
+def test_convert_annual_usd_with_annual_keyword():
+    # "annual" cũng phải chia 12
+    assert parse_and_convert_salary("$120,000 annual") == (254.0, 254.0)
+
+def test_convert_thousand_usd():
+    # [FIX P0] "15 - 20 nghìn USD" trước đây parse thành 15-20 USD (lệch 1000×).
+    # 15 * 1000 * 25.4 / 1000 = 381 triệu; 20 * 1000 * 25.4 / 1000 = 508 triệu.
+    assert parse_and_convert_salary("15 - 20 nghìn USD") == (381.0, 508.0)
+
+def test_convert_thousand_vnd():
+    # "20 - 30 nghìn" (không có đơn vị tiền tệ) -> không đoán mò, trả None
+    assert parse_and_convert_salary("20 - 30 nghìn") == (None, None)
+
+def test_convert_competitive_vietnamese():
+    # [FIX P0] "Cạnh tranh" (TopCV) phải coi là negotiable, không cố parse số.
+    assert parse_and_convert_salary("Cạnh tranh") == (None, None)
+
+def test_convert_competitive_english():
+    # "Competitive" (ITviec) cũng là negotiable
+    assert parse_and_convert_salary("Competitive") == (None, None)

@@ -28,3 +28,48 @@ def test_normalize_locations_fallback_unknown():
     raw = ["Sao Hỏa", "   Bắc    Giang   "]
     expected = ["Sao Hỏa", "Bắc Giang"]
     assert normalize_locations(raw) == expected
+
+
+def test_normalize_locations_full_province_list():
+    """[P2] 63 tỉnh/thành phải được chuẩn hóa, kể cả biến thể không dấu/tiếng Anh."""
+    raw = [
+        "Tây Ninh",
+        "Tay Ninh",
+        "Quảng Ninh",
+        "Bắc Giang",
+        "Thái Nguyên",
+        "Đắk Lắk",
+        "Kon Tum",
+        "Lâm Đồng",
+        "Bà Rịa - Vũng Tàu",
+        "Bà Rịa Vũng Tàu",
+    ]
+    expected = [
+        "Tây Ninh",
+        "Quảng Ninh",
+        "Bắc Giang",
+        "Thái Nguyên",
+        "Đắk Lắk",
+        "Kon Tum",
+        "Lâm Đồng",
+        "Bà Rịa - Vũng Tàu",
+    ]
+    assert normalize_locations(raw) == expected
+
+
+def test_normalize_locations_prefix_slice():
+    """[P2] Chuỗi "Tỉnh: (chi tiết)" hoặc "Tỉnh - (chi tiết)" phải cắt về đúng tên tỉnh."""
+    raw = [
+        "Quảng Ninh: (Tất cả phường)",
+        "Hà Nội - 123 Đường Láng, Đống Đa",
+        "Bình Dương: KCN VSIP 1",
+    ]
+    expected = ["Quảng Ninh", "Hà Nội", "Bình Dương"]
+    assert normalize_locations(raw) == expected
+
+
+def test_normalize_locations_english_variants():
+    """[P2] Biến thể tiếng Anh/không dấu của các tỉnh cũng được map."""
+    raw = ["Ha Noi", "Ho Chi Minh", "Da Nang", "Hai Phong", "Can Tho", "Quang Ninh"]
+    expected = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Hải Phòng", "Cần Thơ", "Quảng Ninh"]
+    assert normalize_locations(raw) == expected

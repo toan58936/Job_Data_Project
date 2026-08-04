@@ -10,6 +10,13 @@ rule reject company_name_empty.
 KHÔNG reject description_raw rỗng — case detail_crawled=False (listing-only)
 có description_raw="" HỢP LỆ theo thiết kế (_parse_listing() luôn trả rỗng, có
 chủ đích). Thay vào đó gắn cờ data_completeness để phân biệt, không loại bỏ.
+
+[FIX P2 — elt_audit_report 2026-08-03]
+- `locations` và `work_mode` trước đây KHÔNG được validate là required → giải
+  thích tại sao 3.1% locations và 7.1% work_mode bị null. Thêm validate cho
+  các field này, tuy nhiên chỉ flag chứ KHÔNG reject hoàn toàn (đánh dấu qua
+  data_completeness = "partial" để không làm mất job vốn có description đầy đủ
+  nhưng thiếu work_mode — rất phổ biến ở các job ít thông tin cấu trúc).
 """
 import json
 from pathlib import Path
@@ -43,11 +50,35 @@ def validate(record: SourceNormalized, registry_entry: dict | None = None) -> Va
             and record.salary_min > record.salary_max
         ):
             reasons.append("salary_min_gt_max")
+        # [FIX P1] elt_audit_report: 4 job status=disclosed nhưng thiếu salary
+        # min/max (itv_3847, itv_3902, tcv_8821, tcv_9014). Flag rõ ràng để
+        # phát hiện sớm parser thiếu sót, thay vì để lọt vào Gold layer.
+        if record.salary_min is None and record.salary_max is None:
+            reasons.append("salary_disclosed_but_missing")
+
+    # [FIX P2] Validate locations/work_mode là required — NHƯNG KHÔNG reject.
+    # lý do: elt_audit_report chỉ ra 3.1% locations và 7.1% work_mode rỗng,
+    # đây là field quan trọng cho dashboard lọc theo tỉnh/thành và remote/hybrid.
+    # Thay vì loại bỏ job (mất dữ liệu quý), hạ cấp data_completeness xuống
+    # "incomplete" để dashboard biết mà lọc/cảnh báo.
+    completeness_flags: list[str] = []
+    if not record.locations:
+        completeness_flags.append("missing_locations")
+    if record.work_mode is None:
+        completeness_flags.append("missing_work_mode")
 
     # data_completeness: suy từ description_raw rỗng hay không — KHÔNG dùng để
     # reject, chỉ để store/dashboard sau này lọc riêng nếu cần (job listing-only
     # thường thiếu mô tả đầy đủ, không nên trộn lẫn coi ngang hàng job đủ dữ liệu).
-    data_completeness = "full" if record.description_raw.strip() else "listing_only"
+    if record.description_raw.strip():
+        data_completeness = "full"
+    elif completeness_flags:
+        data_completeness = "incomplete"
+    else:
+        data_completeness = "listing_only"
+
+    # Gắn cờ chi tiết trường thiếu vào source_extra để Enrich/lưu trữ dùng được
+    record.source_extra["completeness_flags"] = completeness_flags
 
     return ValidationResult(
         is_valid=(len(reasons) == 0),
