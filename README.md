@@ -35,6 +35,8 @@ job-data-project/
 └── shared/                  # source_registry, utils
 ```
 
+> **Mới**: `pipeline/tools/role_extractor.py` + `seniority_extractor.py` chuẩn hóa `job_role` & `seniority_level` cho từng job; `pipeline/store/duckdb_store.py::store_to_gold()` tạo Gold layer phân tích gọn (chỉ giữ cột categorical/numeric/date).
+
 ---
 
 ## ⚙️ Yêu cầu hệ thống
@@ -151,8 +153,8 @@ python -m orchestrator.run_pipeline --source topcv --date 2026-08-01
 
 **Output**:
 - `data/normalized/{source}/{date}/normalized.jsonl` (Silver)
-- `data/enriched/{source}/{date}/enriched.jsonl` (Golden Schema)
-- `data/clean/year=YYYY/month=MM/jobs_{source}_{date}.parquet` (Gold, per-source)
+- `data/enriched/{source}/{date}/enriched.jsonl` (Golden Schema, có `job_role` + `seniority_level`)
+- `data/clean/year=YYYY/month=MM/jobs_{source}_{date}.parquet` (per-source, giữ toàn bộ cột)
 - `data/rejected/{source}/{date}/rejected.jsonl` (log bản ghi lỗi)
 
 ---
@@ -165,7 +167,7 @@ python -m orchestrator.run_pipeline --source topcv --date 2026-08-01
 python -m logs._build_gold_merged
 ```
 
-**Output**: `data/clean/year=2026/month=08/jobs_2026-08-01.parquet` (Gold layer thống nhất)
+**Output**: `data/gold/year=2026/month=08/jobs_2026-08-01.parquet` (Gold layer thống nhất)
 
 > Script này đọc `data/enriched/{itviec,topcv}/{date}/enriched.jsonl`, gộp lại, chạy `cross_source_dedupe.deduplicate()` trên toàn bộ rồi xuất 1 file parquet duy nhất.
 
@@ -193,6 +195,8 @@ Các bộ test chính:
 - `test_shared_normalize.py` — chuẩn hóa locations
 - `test_shared_salary_convert.py` — quy đổi lương
 - `test_skill_extractor.py` — trích xuất kỹ năng
+- `test_role_extractor.py` — chuẩn hóa `job_role`
+- `test_seniority_extractor.py` — phân loại `seniority_level`
 - `test_cross_source_dedupe.py` — khử trùng chéo nguồn
 - `test_shared_validate.py` — validation
 - `test_source_adapter_contract.py` — contract parser
@@ -205,10 +209,12 @@ Các bộ test chính:
 |---|---|---|
 | **Bronze (raw)** | `data/raw/{source}/{date}/` | HTML thô + JSONL meta từ crawler |
 | **Silver (normalized)** | `data/normalized/{source}/{date}/` | Dữ liệu đã parse/clean/normalize |
-| **Silver (enriched)** | `data/enriched/{source}/{date}/` | Golden schema (JobPosting) + skills |
-| **Gold (clean)** | `data/clean/year=Y/month=M/` | Parquet cuối (dedup) |
+| **Silver (enriched)** | `data/enriched/{source}/{date}/` | Golden schema (JobPosting) + skills + `job_role`/`seniority_level` |
+| **Gold (clean)** | `data/gold/year=Y/month=M/` | Parquet cuối (dedup chéo nguồn), chỉ giữ cột phân tích — **nguồn dữ liệu cho dashboard** |
 | **Rejected** | `data/rejected/{source}/{date}/` | Bản ghi bị loại (kèm reason) |
 | **Metadata** | `data/metadata/` | cookie, crawl_log, unrecognized_skills |
+
+> **Dữ liệu cho Dashboard**: Tầng **Gold** (`data/gold/`) là dữ liệu cuối cùng — đã làm sạch + enrich + khử trùng chéo nguồn, chỉ giữ các cột phân tích (categorical/numeric/date, gồm `job_role` & `seniority_level`), và **là nguồn duy nhất dashboard đọc** (qua `dashboard/utils/db_connector.py` kết nối `jobs_current.duckdb` / parquet). Các tầng raw/normalized/enriched chỉ là các bước trung gian trong pipeline, không phục vụ trực tiếp dashboard.
 
 ---
 
@@ -242,7 +248,7 @@ shared_enrich()  ──►  trích xuất skills → JobPosting
 cross_source_dedupe()  ──►  gộp job trùng chéo nguồn
         │
         ▼
-store_to_parquet()  ──►  Gold layer (Parquet)
+store_to_gold()  ──►  Gold layer (Parquet, chỉ cột phân tích)
 ```
 
 ---

@@ -20,8 +20,9 @@ class JobPosting(BaseModel):
     work_mode: Optional[WorkMode] = None   # Hình thức làm việc (onsite, hybrid, remote)
     description_raw: str                   # Mô tả công việc đã dọn sạch HTML
 
-    # === CLASSIFICATION (enriched) ===
+# === CLASSIFICATION (enriched) ===
     seniority_level: Optional[str] = None  # Cấp độ (junior, middle, senior, lead...)
+    job_role: Optional[str] = None         # Vai trò canonical (data_engineer, data_analyst, ...)
     job_expertise: list[str] = Field(default_factory=list) # Chuyên môn (Data Engineer, Backend...)
     job_domains: list[str] = Field(default_factory=list)   # Lĩnh vực (Banking, E-commerce...)
 

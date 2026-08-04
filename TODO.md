@@ -1,48 +1,36 @@
-# TODO — ELT Audit Remediation & Re-run
+# TODO — Role Normalization & Gold Layer cho Dashboard
 
-## Bước 1 — Cập nhật skills_taxonomy.py (P0)
-- [x] Thêm 26 skills phổ biến từ unrecognized_skills.jsonl (dbt, airflow, terraform, fastapi, nextjs, svelte, rust, golang, playwright, grafana, prometheus, pulumi, remix, supabase, clickhouse, datadog, langchain, bun, tanstack, htmx, ...)
-- [x] Thêm aliases (NextJS→Next.js, Golang→Go, Pyspark→PySpark, fastapi→FastAPI, ...)
-- [x] Viết test đảm bảo taxonomy phủ các skills tần suất cao
+Kế hoạch triển khai chuẩn hóa vai trò công việc (canonical `job_role`) và tinh gọn
+Gold layer phục vụ dashboard. Quyết định đã chốt với user:
+- Chỉ giữ `job_role` canonical (data_engineer, data_analyst, ...) — bóc tách từ title.
+- Loại bỏ `job_expertise`/`job_domains`/`url`/`description_raw`/`source_extra`/`data_completeness`/`crawled_at`/`listing_position` khỏi Gold.
+- Giữ `job_id` + `source` làm khoá join sang enriched để xem job gốc khi cần.
 
-## Bước 2 — sửa shared_salary_convert.py (P0)
-- [x] Xử lý "nghìn" trong regex unit
-- [x] Xử lý annual/yearly salary (chia 12)
-- [x] Bỏ hardcode tỷ giá → đọc từ config/fallback
-- [x] Viết test cho các case mới
+## Các bước thực hiện
 
-## Bước 3 — sửa skill_extractor.py (P1)
-- [x] Thêm regex headers tiếng Việt vào `_split_text_by_context` ("Yêu cầu", "Kỹ năng", "Mô tả", ...)
-- [x] Viết test cho case tiếng Việt
+- [x] **R1.** Tạo `pipeline/tools/role_extractor.py` — module nhận diện canonical role từ title/expertise (data_engineer, data_analyst, data_scientist, ml_engineer, data_architect, bi_analyst, ai_engineer, devops, backend, frontend, qa, ...)
+- [x] **R2.** Viết test `pipeline/tests/test_role_extractor.py` (EN + VI)
+- [x] **R3.** Cập nhật `pipeline/model/job_posting.py` — thêm field `job_role: Optional[str] = None`
+- [x] **R4.** Cập nhật `pipeline/pipeline_steps/shared_enrich.py` — gọi `extract_seniority()` (bỏ hardcode `None`) + `extract_role()` để điền `job_role`
+- [x] **R5.** Cập nhật `pipeline/store/duckdb_store.py` — thêm `store_to_gold()` chỉ ghi các cột phân tích được
+- [x] **R6.** Cập nhật `logs/_build_gold_merged.py` — chuyển sang `store_to_gold()` để tạo Gold file chuẩn
+- [x] **R7.** Chạy pytest toàn bộ để đảm bảo không vỡ test cũ
+- [x] **R8.** Re-run pipeline (itviec + topcv) → build Gold layer → verify role + seniority
+- [x] **R9.** Cập nhật `README.md` và `TODO.md` phản ánh tính năng mới
 
-## Bước 4 — sửa shared_normalize.py (P1)
-- [x] Bổ sung mapping location tiếng Anh (Ha Noi, Ho Chi Minh, HCM, Binh Duong, Da Nang)
-- [x] Viết test
+## Kết quả R8 (verify)
 
-## Bước 5 — sửa cross_source_dedupe.py (P2)
-- [x] Thêm salary_range làm tín hiệu phụ (chênh > 50% → không gộp)
-- [x] Viết test
+- Enriched itviec: 45 bản ghi — `job_role` điền 44/45 (97.8%), `seniority_level` 32/45 (71%).
+- Enriched topcv: 57 bản ghi — `job_role` điền 43/57 (75.4%), `seniority_level` 43/57 (75.4%).
+- Gold layer: `data/gold/year=2026/month=08/jobs_2026-08-01.parquet` (96 records sau dedup).
+- Gold columns: gồm `job_role` (non-null 81/96) + `seniority_level` (non-null 69/96) → đã có đủ cho dashboard phân tích.
 
-## Bước 6 — cookie ITviec + TopCV parse (P0/P3)
-- [x] Cập nhật itviec_cookies.json (re-login)
-- [x] TopCV: xử lý "Cạnh tranh" salary → negotiable
-- [x] TopCV: parse posted_date đúng (tránh nhầm hạn nộp)
+## Phần B đã hoàn thành (Seniority Level Normalization)
 
-## Bước 7 — shared_validate.py (P2)
-- [x] Validate locations/work_mode required
-- [x] Validate salary_min < salary_max
-- [x] Viết test
-
-## Bước 8 — Re-run pipeline + Audit
-- [x] Chạy lại run_pipeline.py cho 2026-08-01 (itviec ✅ 45 enriched, topcv ✅ 57 enriched)
-- [x] Chạy lại audit_data_quality.py / _verify_fixes_after_rerun.py
-  - Completeness: title/company/locations/work_mode/job_skills đều ✅ (0% null/empty)
-  - Locations: tất cả đã chuẩn hóa ✅
-  - Salary anomalies: 0 (hết bug 1.2B và 0) ✅
-  - Posted_date tương lai: 0 ✅
-  - Skills mới: 20/26 taxonomy mới xuất hiện trong dữ liệu ✅
-  - Còn lại: 6 records disclosed chỉ có 1 biên min/max (dạng "Up To X"/"From X") — chấp nhận được
-- [x] Tạo Gold layer gộp chéo nguồn: `logs/_build_gold_merged.py`
-  - 102 enriched → 96 gold (dedup chéo nguồn loại 6 job trùng)
-  - Lưu `data/clean/year=2026/month=08/jobs_2026-08-01.parquet`
-  - Audit cuối: 96 records, các chỉ số đều PASS
+- [x] B1. Tạo `pipeline/tools/seniority_extractor.py`
+- [x] B2. Cập nhật `shared_enrich.py` — gọi `extract_seniority()`
+- [x] B3. Viết test `pipeline/tests/test_seniority_extractor.py`
+- [x] B4. Cập nhật `logs/_verify_role_seniority.py`
+- [x] B5. Chạy pytest toàn bộ
+- [x] B6. Re-run pipeline → build Gold layer → verify seniority
+- [x] B7. Cập nhật `README.md` và `TODO.md`

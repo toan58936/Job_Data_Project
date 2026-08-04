@@ -88,50 +88,58 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     Nhận chuỗi lương thô (VD: '1000 - 1500 USD', 'Trên 20 triệu')
     Quy đổi toàn bộ về định dạng float với đơn vị: Triệu VNĐ.
 
-    [FIX] Đây giờ là NƠI DUY NHẤT tính số lương trong toàn pipeline — parse.py
+[FIX] Đây giờ là NƠI DUY NHẤT tính số lương trong toàn pipeline — parse.py
     (itviec/topcv) không còn tự tính nữa (chỉ trích text thô vào source_extra
-    ["salary_raw"]), tránh 2 nơi cùng parse với logic phân kỳ như trước.
+["salary_raw"]), tránh 2 nơi cùng parse với logic phân kỳ như trước.
     """
-    if not salary_raw or salary_raw.lower() in ("thoả thuận", "thỏa thuận", "negotiable", "thương lượng", "cạnh tranh"):
+    if not salary_raw or salary_raw.strip().lower() in _NEGOTIABLE_MARKERS:
         return None, None
 
     cleaned = salary_raw.lower()
-    
+
     # [FIX] Xử lý an toàn dấu phẩy/chấm phân cách hàng nghìn (VD: 1.500 USD, 15,000,000 VND)
     # Lặp để xóa dấu phân cách hàng nghìn (dấu chấm/phẩy theo sau bởi đúng 3 chữ số và kết thúc từ)
     while re.search(r'(\d)[.,](\d{3})\b', cleaned):
         cleaned = re.sub(r'(\d)[.,](\d{3})\b', r'\1\2', cleaned)
-    
+
     # Loại bỏ các dấu phẩy còn sót (nếu có, không thuộc dạng hàng nghìn)
     cleaned = cleaned.replace(",", "")
 
-    # 1. Xác định hệ số nhân để đưa về "Triệu VNĐ"
-    # [FIX] Trước đây multiplier mặc định = 1.0 và KHÔNG thay đổi nếu không khớp
-    # bất kỳ đơn vị nào ("usd"/"triệu"/"tr"/"vnd") -- nghĩa là 1 số trần trụi như
-    # "15000000" (không có chữ đơn vị đi kèm) bị hiểu nhầm thành "15000000 triệu",
-    # một con số vô lý. Giờ nếu không nhận diện được đơn vị, trả None thay vì đoán.
-    multiplier: Optional[float] = None
+    # 1. Xác định trạng thái đơn vị để quy đổi về "Triệu VNĐ"
+    has_usd = "usd" in cleaned or "$" in cleaned
+    has_million = ("triệu" in cleaned or re.search(r"\d+\s*tr\b", cleaned)
+                   or re.search(r"\btr\b", cleaned) or "million" in cleaned)
+    has_vnd = "vnd" in cleaned or "vnđ" in cleaned
+    has_thousand = any(w in cleaned for w in ("nghìn", "ngàn", "thousand", "k "))
 
-    if "usd" in cleaned or "$" in cleaned:
+    # [FIX P0] "nghìn"/"ngàn" mà KHÔNG kèm đơn vị tiền tệ (USD/VND/triệu) -> không
+    # đoán mò, trả None. Trước đây "20 - 30 nghìn" bị nhân 1/1000 ra 0.02-0.03 triệu.
+    if has_thousand and not (has_usd or has_million or has_vnd):
+        return None, None
+
+    if has_usd:
         # Ví dụ 1000 USD -> 1000 * (25.4 / 1000) = 25.4 triệu VNĐ
         multiplier = EXCHANGE_RATE_USD_TO_VND / 1000
-    elif "triệu" in cleaned or re.search(r"\d+\s*tr\b", cleaned) or re.search(r"\btr\b", cleaned) or "million" in cleaned:
+    elif has_million:
         # [FIX] Trước đây check "tr" in cleaned (substring bất kỳ đâu trong chuỗi) --
         # rủi ro khớp nhầm các từ chứa "tr" không liên quan đến đơn vị tiền. Giờ chỉ
         # nhận "triệu" đầy đủ, hoặc "tr" đứng riêng/dính liền sau số (dạng viết tắt
         # "20tr").
         multiplier = 1.0
-    elif "nghìn" in cleaned or "ngàn" in cleaned or "k " in cleaned or cleaned.endswith("k"):
-        multiplier = 1 / 1000
-    elif "vnd" in cleaned or "vnđ" in cleaned:
+    elif has_vnd:
         # Ví dụ ghi hẳn 15000000 VND -> 15000000 * (1/1000000) = 15 triệu
         multiplier = 1 / 1_000_000
-
-    if multiplier is None:
+    else:
+        # Không nhận diện được đơn vị -> không đoán, trả None (tránh con số vô lý)
         return None, None
 
-    # [FIX] Xử lý lương theo Năm (Annual Salary)
-    is_yearly = any(word in cleaned for word in ["/year", "/ year", "năm", "per year", "yearly", "annually", "p.a"])
+    # [FIX P0] "nghìn" / "ngàn" / "thousand" -> nhân 1000 (15 nghìn USD = 15,000 USD)
+    if has_thousand:
+        multiplier = multiplier * 1000
+
+    # [FIX P0] Lương quy theo NĂM (year / năm / annual) -> chia 12 để về theo tháng
+    is_yearly = any(word in cleaned for word in
+                    ["/year", "/ year", "năm", "per year", "yearly", "annually", "annual", "p.a"])
     if is_yearly:
         multiplier = multiplier / 12
 
@@ -140,8 +148,8 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     if not numbers:
         return None, None
 
-    # Áp dụng hệ số quy đổi và làm tròn 3 chữ số thập phân (để không làm mất đơn vị nghìn)
-    vals = [round(float(n) * multiplier, 3) for n in numbers]
+    # Quy đổi và làm tròn 1 chữ số thập phân (đơn vị: Triệu VNĐ)
+    vals = [round(float(n) * multiplier, 1) for n in numbers]
 
     # 3. Phân loại cấu trúc (Khoảng, Cận dưới, Cận trên)
     if "-" in cleaned or " tới " in cleaned or " đến " in cleaned:
