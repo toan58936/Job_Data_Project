@@ -31,6 +31,60 @@ def _extract_json_data(tree):
         return {}
 
 
+def _extract_jsonld_data(tree) -> dict:
+    """Lấy JSON-LD JobPosting (schema.org) nhúng trong <script type="application/ld+json">."""
+    scripts = tree.xpath('//script[@type="application/ld+json"]/text()')
+    for raw_script in scripts:
+        try:
+            data = json.loads(raw_script)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data.get("@type") == "JobPosting":
+            return data
+    return {}
+
+
+def _extract_location_raw(tree, container) -> str:
+    """Lấy full text địa chỉ (span cạnh icon map-pin) trên trang chi tiết ITviec.
+
+    HTML thực tế:
+        <div class="d-inline-block text-dark-grey">
+          <svg ...><use href="...#map-pin"></use></svg>
+          <span class="normal-text text-rich-grey">Tầng 4 ... Đà Nẵng, Hai Chau, Da Nang</span>
+          <a href="https://www.google.com/maps?q=...">...</a>
+        </div>
+    """
+    nodes = []
+    if container:
+        nodes = container[0].xpath(
+            './/svg[.//use[contains(@href, "#map-pin")]]'
+            '/following-sibling::span[contains(@class, "normal-text")][1]'
+        )
+    if not nodes:
+        nodes = tree.xpath(
+            '//svg[.//use[contains(@href, "#map-pin")]]'
+            '/following-sibling::span[contains(@class, "normal-text")][1]'
+        )
+    if nodes:
+        text = _extract_text(nodes[0]).strip()
+        if text:
+            return text
+
+    # Fallback: JSON-LD jobLocation (schema.org)
+    jsonld = _extract_jsonld_data(tree)
+    job_locations = jsonld.get("jobLocation") or []
+    if job_locations:
+        address = job_locations[0].get("address", {}) or {}
+        street = (address.get("streetAddress") or "").strip()
+        if street:
+            return street
+        region = (address.get("addressRegion") or "").strip()
+        if region:
+            return region
+
+    return ""
+
+
 
 
 def _split_description_sections(text: str) -> dict[str, str]:
@@ -134,6 +188,8 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
             if loc and loc not in locations:
                 locations.append(loc)
 
+    location_raw = _extract_location_raw(tree, container)
+
     # --- Xử lý lương (Không bóc số ở đây, chỉ gom text thô cho Bước 4) ---
     salary_status = SalaryStatus.NOT_PROVIDED
     salary_text = ""
@@ -211,6 +267,7 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
 
     source_extra: dict[str, Any] = {
         "salary_raw": salary_text,
+        "location_raw": location_raw,
         "requirements_raw": requirements_raw,
         "benefits_raw": benefits_raw,
         "experience_raw": experience_raw,
@@ -296,6 +353,7 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
         "posted_date_raw": posted_date_raw,
         "source_extra": {
             "salary_raw": "",
+            "location_raw": "",
             "requirements_raw": "",
             "benefits_raw": "",
             "experience_raw": "",

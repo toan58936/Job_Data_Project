@@ -145,8 +145,8 @@ Từ **gốc dự án** (nơi có module `pipeline/`):
 
 ```bash
 # Chạy cho từng nguồn
-python -m orchestrator.run_pipeline --source itviec --date 2026-08-01
-python -m orchestrator.run_pipeline --source topcv --date 2026-08-01
+python -m orchestrator.run_pipeline --source itviec --date 2026-08-06
+python -m orchestrator.run_pipeline --source topcv --date 2026-08-06
 ```
 
 **Luồng pipeline**: Merge → Parse → Clean → Normalize → Salary Convert → Validate → Enrich → Dedup → Parquet.
