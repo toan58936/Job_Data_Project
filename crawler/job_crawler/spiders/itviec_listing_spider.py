@@ -3,26 +3,56 @@ import re
 from job_crawler.spiders.base_spider import BaseSpider
 from job_crawler.items import JobCrawlerItem
 
+DEFAULT_SEARCH_KEYWORD = "data-engineer"
+
+
+def _slugify_keyword(keyword: str) -> str:
+    """'Data Analyst' -> 'data-analyst' — ITviec dùng slug thường, gạch nối
+    thay khoảng trắng trong URL /it-jobs/{slug}."""
+    slug = keyword.strip().lower()
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    return slug or DEFAULT_SEARCH_KEYWORD
+
 
 class ItviecListingSpider(BaseSpider):
     source_name = "itviec"
     name = "itviec_listing"
 
-    base_url = "https://itviec.com/it-jobs/data-engineer"
     max_pages = 20
+
+    def __init__(self, search_keyword: str = DEFAULT_SEARCH_KEYWORD, *args, **kwargs):
+        # [FIX Vấn đề 3] base_url trước đây hard-code "data-engineer" ở cấp class
+        # attribute -- muốn crawl từ khoá khác phải sửa code. Giờ nhận qua CLI:
+        #   scrapy crawl itviec_listing -a batch_date=... -a search_keyword=data-analyst
+        # BaseSpider.__init__ đã nhận **kwargs sẵn nên không cần sửa gì ở đó.
+        super().__init__(*args, **kwargs)
+        self.search_keyword = search_keyword
+        self.base_url = f"https://itviec.com/it-jobs/{_slugify_keyword(search_keyword)}"
 
     async def start(self):
         yield scrapy.Request(
             url=f"{self.base_url}?page=1",
             callback=self.parse,
-            meta={"playwright": True},
+            meta={
+                "playwright": True,
+                # [FIX Vấn đề 4] Trước đây listing crawl KHÔNG đăng nhập trong khi
+                # detail có đăng nhập -- 2 spider có thể thấy job set khác nhau nếu
+                # ITviec cá nhân hoá kết quả theo tài khoản. Set thẳng context đã có
+                # sẵn cookie (định nghĩa ở settings.py, KHÔNG phụ thuộc điều kiện
+                # "spider.name == itviec_detail" trong LoginMiddleware -- context
+                # Playwright dùng được bởi bất kỳ request nào tham chiếu đúng tên).
+                # An toàn với trang public: có cookie login không ảnh hưởng gì nếu
+                # trang không cần đăng nhập, chỉ là dùng dư context có sẵn.
+                "playwright_context": "itviec_authed",
+            },
         )
 
     def parse(self, response):
         page_match = re.search(r'[?&]page=(\d+)', response.url)
         page_num = int(page_match.group(1)) if page_match else 1
 
-        self.logger.info(f"🔥 Đang parse ITviec trang {page_num}")
+        self.logger.info(f"🔥 Đang parse ITviec trang {page_num} (keyword={self.search_keyword})")
 
         cards = response.css("div.job-card")
         if not cards:
@@ -41,7 +71,7 @@ class ItviecListingSpider(BaseSpider):
             url_value = card.attrib.get("data-search--job-selection-job-url-value", "")
             url = href if href else url_value
 
-            # Company name — fix từ phiên bản trước
+            # Company name
             company_name = ""
             company_nodes = card.css('a[href*="/companies/"].text-rich-grey')
             if not company_nodes:
@@ -76,5 +106,8 @@ class ItviecListingSpider(BaseSpider):
             yield scrapy.Request(
                 url=next_url,
                 callback=self.parse,
-                meta={"playwright": True},
+                meta={
+                    "playwright": True,
+                    "playwright_context": "itviec_authed",  # [FIX Vấn đề 4] — nhất quán với request đầu
+                },
             )

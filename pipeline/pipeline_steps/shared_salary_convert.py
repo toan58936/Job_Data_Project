@@ -15,11 +15,14 @@ shared_salary_convert.py — Bước 4 Pipeline: Quy đổi lương thô về "T
    - Trước đây TopCV ghi "Cạnh tranh" bị phân loại DISCLOSED → không lương.
 """
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional, Tuple
 
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized
+
+logger = logging.getLogger(__name__)
 
 # Tỷ giá quy đổi FALLBACK (1 USD = 25,400 VNĐ, đơn vị lưu = nghìn VNĐ).
 # Ưu tiên đọc từ snapshot: data/metadata/exchange_rate_snapshot.json hoặc .parquet.
@@ -36,6 +39,8 @@ _EXCHANGE_RATE_CACHE: Optional[float] = None
 _NEGOTIABLE_MARKERS = frozenset({
     "thoả thuận", "thỏa thuận", "thương lượng", "negotiable",
     "competitive", "cạnh tranh",
+    "thỏa thuận lương", "lương thỏa thuận", "trao đổi",
+    "upon agreement", "k thỏa thuận", "theo thỏa thuận",
 })
 
 
@@ -97,6 +102,9 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
 
     cleaned = salary_raw.lower()
 
+    # [FIX P1] Loại bỏ prefix "Lương:" / "Lương -" thường gặp (không ảnh hưởng số)
+    cleaned = re.sub(r"^(lương\s*[:\-]?\s*)", "", cleaned)
+
     # [FIX] Xử lý an toàn dấu phẩy/chấm phân cách hàng nghìn (VD: 1.500 USD, 15,000,000 VND)
     # Lặp để xóa dấu phân cách hàng nghìn (dấu chấm/phẩy theo sau bởi đúng 3 chữ số và kết thúc từ)
     while re.search(r'(\d)[.,](\d{3})\b', cleaned):
@@ -110,7 +118,13 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
     has_million = ("triệu" in cleaned or re.search(r"\d+\s*tr\b", cleaned)
                    or re.search(r"\btr\b", cleaned) or "million" in cleaned)
     has_vnd = "vnd" in cleaned or "vnđ" in cleaned
-    has_thousand = any(w in cleaned for w in ("nghìn", "ngàn", "thousand", "k "))
+    # [FIX P1] "k" viết tắt nghìn: dùng regex để bắt cả "15k USD" (k dính số)
+    # và "15 k USD" (k tách rời). \bk\b không match "15k" vì thiếu word boundary
+    # giữa digit và k -> thêm alternation (?:\d|\b) để cover cả 2 trường hợp.
+    has_thousand = (
+        any(w in cleaned for w in ("nghìn", "ngàn", "thousand"))
+        or re.search(r"(?:\d|\b)k\b", cleaned) is not None
+    )
 
     # [FIX P0] "nghìn"/"ngàn" mà KHÔNG kèm đơn vị tiền tệ (USD/VND/triệu) -> không
     # đoán mò, trả None. Trước đây "20 - 30 nghìn" bị nhân 1/1000 ra 0.02-0.03 triệu.
@@ -142,6 +156,16 @@ def parse_and_convert_salary(salary_raw: str) -> Tuple[Optional[float], Optional
                     ["/year", "/ year", "năm", "per year", "yearly", "annually", "annual", "p.a"])
     if is_yearly:
         multiplier = multiplier / 12
+
+    # [FIX P1] Lương tính theo GIỜ/NGÀY/TUẦN -> không thể quy về tháng mà không biết
+    # lịch làm việc. Log warning + trả về None thay vì đoán nhầm.
+    is_rate_based = any(word in cleaned for word in
+                        ["/hour", "/giờ", "/day", "/ngày", "/week", "/tuần",
+                         "per hour", "per day", "per week",
+                         "hourly", "daily", "weekly"])
+    if is_rate_based:
+        logger.warning("Rate-based salary '%s' — cannot convert without work-schedule context", salary_raw)
+        return None, None
 
     # 2. Tìm tất cả các con số trong chuỗi (Hỗ trợ cả số thập phân như 1.5)
     numbers = re.findall(r"(\d+(?:\.\d+)?)", cleaned.replace(",", "."))

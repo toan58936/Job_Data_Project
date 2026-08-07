@@ -1,13 +1,16 @@
 """Phase 1 — crawl listing TopCV, output jobs_meta_listing.jsonl.
 Chỉ thu thập raw HTML và metadata cơ bản.
 """
-from urllib.parse import parse_qs, urlparse, urlunparse, urlencode
-import scrapy
 import re
+from urllib.parse import parse_qs, urlparse, urlunparse, urlencode
+
+import scrapy
 from job_crawler.spiders.base_spider import BaseSpider
 from job_crawler.items import JobCrawlerItem
 
 TRACKING_PARAMS = {"ta_source", "u_sr_id"}
+DEFAULT_SEARCH_KEYWORD = "data-engineer"
+
 
 def _strip_tracking_params(url: str) -> str:
     parsed = urlparse(url)
@@ -16,20 +19,42 @@ def _strip_tracking_params(url: str) -> str:
     return urlunparse(parsed._replace(query=urlencode(clean_params, doseq=True), fragment=""))
 
 
+def _slugify_keyword(keyword: str) -> str:
+    """'Data Analyst' -> 'data-analyst' — TopCV dùng dạng
+    /tim-viec-lam-{slug}, cùng quy tắc slug với ITviec nên dùng chung logic."""
+    slug = keyword.strip().lower()
+    slug = re.sub(r"\s+", "-", slug)
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    return slug or DEFAULT_SEARCH_KEYWORD
+
+
 class TopcvListingSpider(BaseSpider):
     source_name = "topcv"
     name = "topcv_listing"
 
-    base_url = "https://www.topcv.vn/tim-viec-lam-data-engineer"
     max_pages = 20
 
-    start_urls = [f"{base_url}?type_keyword=1&sba=1&page=1"]
+    def __init__(self, search_keyword: str = DEFAULT_SEARCH_KEYWORD, *args, **kwargs):
+        # [FIX Vấn đề 3] Trước đây base_url là class attribute tính sẵn "data-engineer"
+        # + start_urls cũng tính sẵn ở cấp class -- kể cả nếu thêm tham số search_keyword,
+        # start_urls (đã tính xong lúc định nghĩa class) sẽ KHÔNG bao giờ đổi theo tham số
+        # runtime. Phải chuyển hẳn sang start() async (giống itviec_listing_spider.py) để
+        # build URL trong __init__/start(), không phải ở class body.
+        super().__init__(*args, **kwargs)
+        self.search_keyword = search_keyword
+        self.base_url = f"https://www.topcv.vn/tim-viec-lam-{_slugify_keyword(search_keyword)}"
+
+    async def start(self):
+        yield scrapy.Request(
+            url=f"{self.base_url}?type_keyword=1&sba=1&page=1",
+            callback=self.parse,
+        )
 
     def parse(self, response):
         page_match = re.search(r'[?&]page=(\d+)', response.url)
         page_num = int(page_match.group(1)) if page_match else 1
 
-        self.logger.info(f"🔥 Đang parse TopCV trang {page_num}")
+        self.logger.info(f"🔥 Đang parse TopCV trang {page_num} (keyword={self.search_keyword})")
 
         cards = response.css("div.job-item-search-result")
         if not cards:

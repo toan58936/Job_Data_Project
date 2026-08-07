@@ -16,12 +16,14 @@ def _make_record(**overrides) -> SourceNormalized:
     base = dict(
         job_id="t1",
         source="itviec",
+        batch_date="2026-08-01",
         url="https://itviec.com/jobs/1",
         title="Data Engineer",
         company_name="Test Co",
         locations=["Hà Nội"],
         description_raw="Do something",
         posted_date_raw="today",
+        posted_date=None,
         salary_status=SalaryStatus.DISCLOSED,
         salary_min=20.0,
         salary_max=30.0,
@@ -97,3 +99,27 @@ def test_salary_min_gt_max_is_rejected():
     result = validate(rec)
     assert "salary_min_gt_max" in result.reasons
     assert result.is_valid is False
+
+
+def test_posted_date_too_old_is_rejected():
+    """[Task 4] posted_date quá 1 năm so với batch_date → reject."""
+    from datetime import date
+    rec = _make_record(
+        posted_date=date(2024, 1, 1),
+        batch_date="2026-08-01",
+    )
+    result = validate(rec)
+    assert "posted_date_too_old" in result.reasons
+    assert result.is_valid is False
+
+
+def test_posted_date_recent_is_not_flagged():
+    """[Task 4] posted_date gần batch_date → không flag."""
+    from datetime import date
+    rec = _make_record(
+        posted_date=date(2026, 7, 1),
+        batch_date="2026-08-01",
+    )
+    result = validate(rec)
+    assert "posted_date_too_old" not in result.reasons
+    assert result.is_valid is True

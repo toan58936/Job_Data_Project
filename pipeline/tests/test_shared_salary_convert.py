@@ -49,3 +49,26 @@ def test_convert_competitive_vietnamese():
 def test_convert_competitive_english():
     # "Competitive" (ITviec) cũng là negotiable
     assert parse_and_convert_salary("Competitive") == (None, None)
+
+# === [FIX P1] Các marker negotiable mở rộng ===
+def test_convert_negotiable_extended_markers():
+    for marker in ("thỏa thuận lương", "lương thỏa thuận", "trao đổi",
+                   "upon agreement", "k thỏa thuận", "theo thỏa thuận"):
+        assert parse_and_convert_salary(marker) == (None, None), f"{marker} should be negotiable"
+
+# === [FIX P1] Strip prefix "Lương:" ===
+def test_convert_strip_luong_prefix():
+    assert parse_and_convert_salary("Lương: 20 - 30 triệu") == (20.0, 30.0)
+    assert parse_and_convert_salary("Lương: 1000 - 2000 USD") == (25.4, 50.8)
+
+# === [FIX P1] "k" viết tắt nghìn (không cách trước k) ===
+def test_convert_thousand_k_no_space():
+    # "15k USD" -> 15 * 1000 * 25.4/1000 = 381 triệu
+    assert parse_and_convert_salary("15k USD") == (381.0, 381.0)
+    # "20k - 30k USD" -> 20*1000*0.0254=508, 30*1000*0.0254=762
+    assert parse_and_convert_salary("20k - 30k USD") == (508.0, 762.0)
+
+# === [FIX P1] Rate-based salary (hour/day/week) -> None ===
+def test_convert_rate_based_returns_none():
+    for raw in ("$25/hour", "200.000 VND/ngày", "$500/tuần", "per day 100$"):
+        assert parse_and_convert_salary(raw) == (None, None), f"{raw} should return None"

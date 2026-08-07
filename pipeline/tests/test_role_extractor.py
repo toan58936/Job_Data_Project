@@ -64,9 +64,9 @@ def test_specific_role_preferred_over_generic():
     assert extract_role("Senior Backend Engineer") == "backend_engineer"
 
 
-def test_fallback_to_expertise():
-    # Title không có tín hiệu, nhưng expertise có "Data Engineer"
-    assert extract_role("Position", ["Data Engineer"]) == "data_engineer"
+def test_fallback_to_requirements_text():
+    # Title không có tín hiệu, requirements_text có "Data Engineer"
+    assert extract_role("Position", requirements_text="Data Engineer") == "data_engineer"
 
 
 def test_no_false_positive_database():
@@ -86,3 +86,88 @@ def test_job_roles_order():
     assert "data_scientist" in roles
     # data_engineer nên được đặt trước data_analyst (ưu tiên cụ thể)
     assert roles.index("data_engineer") < roles.index("data_analyst")
+
+
+# === [FIX P1] Vietnamese title patterns mở rộng ===
+def test_vietnamese_big_data():
+    assert extract_role("Chuyên Viên Big Data (Middle)") == "data_engineer"
+
+
+def test_vietnamese_ky_thuat_du_lieu():
+    assert extract_role("Chuyên Viên Kỹ Thuật Dữ Liệu") == "data_engineer"
+
+
+def test_vietnamese_giai_cuu_du_lieu():
+    assert extract_role("Kỹ Sư Giải Cứu Dữ Liệu") == "data_engineer"
+
+
+def test_head_of_data():
+    assert extract_role("Head Of Data") == "data_engineer"
+
+
+def test_data_solution_consultant():
+    assert extract_role("Data Solution Consultant") == "data_engineer"
+
+
+def test_spark_etl():
+    assert extract_role("Spark ETL (Dự Án Chuyển Đổi Số)") == "data_engineer"
+
+
+def test_xu_ly_du_lieu():
+    assert extract_role("Chuyên Viên Xử Lý Dữ Liệu") == "data_analyst"
+
+
+def test_data_intelligence_lead():
+    assert extract_role("Data Intelligence Lead") == "data_analyst"
+
+
+def test_operations_data_specialist():
+    assert extract_role("Senior Operations Data Specialist") == "data_analyst"
+
+
+def test_vietnamese_phat_trien_giai_phap_cntt():
+    assert extract_role("Chuyên Viên Phát Triển Giải Pháp CNTT (Azure, Cloud)") == "software_engineer"
+
+
+def test_ecom_it_application():
+    assert extract_role("Chuyên Viên E-Com IT Application") == "software_engineer"
+
+
+def test_it_infrastructure():
+    assert extract_role("IT Infrastructure Engineer/ Data Center Storage") == "devops_engineer"
+
+
+def test_it_server_database():
+    assert extract_role("IT Server & Database Engineer") == "devops_engineer"
+
+
+# === [FIX P1] Vietnamese management patterns ===
+def test_truong_nhom_ky_thuat():
+    assert extract_role("Trưởng Nhóm Kỹ Thuật") == "engineering_manager"
+
+
+def test_giam_doc_cong_nghe():
+    assert extract_role("Giám Đốc Công Nghệ") == "engineering_manager"
+
+
+def test_cto():
+    assert extract_role("CTO") == "engineering_manager"
+
+
+def test_vietnamese_kien_truc_su_cong_nghe():
+    assert extract_role("Kiến Trúc Sư Công Nghệ") == "solution_architect"
+
+
+# === [FIX P1] requirements_text fallback (TopCV không có expertise field) ===
+def test_fallback_requirements_text():
+    # Title không match, requirements_text có "data engineer"
+    assert extract_role(
+        "Tìm việc làm nhanh 24h", requirements_text="Chúng tôi cần tuyển Data Engineer"
+    ) == "data_engineer"
+
+
+def test_fallback_requirements_not_used_when_title_matches():
+    # Title đã match, requirements_text không ảnh hưởng
+    assert extract_role(
+        "Data Engineer", requirements_text="Chuyên viên phân tích dữ liệu"
+    ) == "data_engineer"

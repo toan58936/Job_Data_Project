@@ -28,8 +28,14 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bdata\s+platform\b",
         r"\bdata\s+architect\b",
         r"\betl\s+(?:engineer|developer)\b",
+        r"\betl\b",
         r"\bdata\s+systems\b",
         r"\bkỹ\s+sư\s+dữ\s+liệu\b",
+        r"\bkỹ\s+thuật\s+dữ\s+liệu\b",
+        r"\bbig\s+data\b",
+        r"\bhead\s+of\s+data\b",
+        r"\bdata\s+solution\b",
+        r"\bgiải\s+cứu\s+dữ\s+liệu\b",
         r"\bchuyên\s+gia\s+(?:tích\s+hợp|dữ\s+liệu)\b",
         r"\bkỹ\s+sư\s+tích\s+hợp\s+dữ\s+liệu\b",
         r"\btrưởng\s+nhóm\s+dữ\s+liệu\b",
@@ -45,6 +51,9 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bphân\s+tích\s+dữ\s+liệu\b",
         r"\bdata\s+analytics\b",
         r"\banalytics\s+engineer\b",
+        r"\bxử\s+lý\s+dữ\s+liệu\b",
+        r"\bdata\s+intelligence\b",
+        r"\bdata\s+specialist\b",
     ],
     "data_scientist": [
         r"\bdata\s+scientist\b",
@@ -105,6 +114,9 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bcloud\s+engineer\b",
         r"\bci/cd\b",
         r"\bquản\s+trị\s+hệ\s+thống\b",
+        r"\binfrastructure\b",
+        r"\bit\s+server\b",
+        r"\bdata\s+center\b",
     ],
     "qa_engineer": [
         r"\bqa\b",
@@ -123,6 +135,8 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bprogrammer\b",
         r"\blập\s+trình\s+(?:viên|phần\s+mềm)\b",
         r"\bkỹ\s+sư\s+phần\s+mềm\b",
+        r"\bphát\s+triển\s+giải\s+pháp\b",
+        r"\be-?\s*com\b",
     ],
 
     # ---- Management / Leadership (role-level, không phải chức vụ) ----
@@ -130,6 +144,9 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bengineering\s+manager\b",
         r"\bhead\s+of\s+engineering\b",
         r"\btrưởng\s+phòng\s+kỹ\s+thuật\b",
+        r"\btrưởng\s+nhóm\s+kỹ\s+thuật\b",
+        r"\bgiám\s+đốc\s+công\s+nghệ\b",
+        r"\bcto\b",
         r"\bmanager\b",
         r"\bquản\s+lý\b",
     ],
@@ -139,6 +156,7 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\bsoftware\s+architect\b",
         r"\bsystem\s+architect\b",
         r"\bkiến\s+trúc\s+sư\b",
+        r"\bkiến\s+trúc\s+sư\s+công\s+nghệ\b",
     ],
     "product_manager": [
         r"\bproduct\s+manager\b",
@@ -188,13 +206,14 @@ def _find_role(text: str) -> Optional[str]:
     return None
 
 
-def extract_role(title: str, expertise: Optional[list[str]] = None) -> Optional[str]:
+def extract_role(title: str, requirements_text: Optional[str] = None) -> Optional[str]:
     """
-    Chuẩn hóa vai trò công việc từ title (và tuỳ chọn expertise).
+    Chuẩn hóa vai trò công việc từ title (và tuỳ chọn requirements_text).
 
     Args:
         title: Tiêu đề công việc (VD: "Senior Data Engineer", "Chuyên viên phân tích dữ liệu").
-        expertise: Danh sách chuyên môn (VD từ ITviec job_expertise) — dùng làm fallback.
+        requirements_text: Text yêu cầu ứng viên (từ source_extra.requirements_raw) —
+                           dùng làm fallback khi title không có tín hiệu.
 
     Returns:
         Một trong các canonical role (data_engineer, data_analyst, ...), hoặc None.
@@ -204,12 +223,11 @@ def extract_role(title: str, expertise: Optional[list[str]] = None) -> Optional[
         if role:
             return role
 
-    # Fallback: nếu title không có tín hiệu, thử expertise (nếu có).
-    if expertise:
-        for exp in expertise:
-            role = _find_role(exp)
-            if role:
-                return role
+    # Fallback: nếu title không có tín hiệu, thử match requirements_text.
+    if requirements_text:
+        role = _find_role(requirements_text)
+        if role:
+            return role
 
     return None
 

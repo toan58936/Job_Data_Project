@@ -9,11 +9,19 @@ về một chuẩn duy nhất ("Hà Nội", "Quảng Ninh").
   biến thể không dấu (vd "Tay Ninh" -> "Tây Ninh").
 - Xử lý chuỗi có prefix chi tiết "Tỉnh: (chi tiết)" / "Tỉnh - (chi tiết)":
   trước khi match, tách lấy phần TỈNH đầu tiên (trước dấu ":" hoặc "-").
+
+[Task 4] Parse posted_date sớm ở normalize step:
+- Nếu parser đã parse rồi (posted_date có sẵn), giữ nguyên (idempotent).
+- Nếu parser quên (posted_date=None) nhưng posted_date_raw có giá trị,
+  parse lại dùng batch_date làm reference.
+- Đảm bảo source_extra["posted_date_parsed"] luôn sync với posted_date.
 """
 import re
 import unicodedata
+from datetime import date
 
 from pipeline.model.source_normalized import SourceNormalized
+from pipeline.tools.date_parser import parse_vietnamese_date
 
 
 def _strip_accents(text: str) -> str:
@@ -190,5 +198,19 @@ def normalize(record: SourceNormalized) -> SourceNormalized:
         record.source_extra["locations_raw"] = list(record.locations)
 
     record.locations = normalize_locations(record.locations)
+
+    # [Task 4] Parse posted_date sớm ở normalize step (idempotent):
+    # - Nếu parser đã parse rồi (posted_date có sẵn), giữ nguyên.
+    # - Nếu parser quên (posted_date=None) nhưng posted_date_raw có giá trị,
+    #   parse lại dùng batch_date làm reference.
+    if record.posted_date is None and record.posted_date_raw.strip():
+        try:
+            batch = date.fromisoformat(record.batch_date)
+            parsed = parse_vietnamese_date(record.posted_date_raw, batch, allow_future=False)
+            if parsed:
+                record.posted_date = parsed
+                record.source_extra["posted_date_parsed"] = parsed.isoformat()
+        except ValueError:
+            pass
 
     return record

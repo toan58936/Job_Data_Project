@@ -17,8 +17,14 @@ chủ đích). Thay vào đó gắn cờ data_completeness để phân biệt, k
   các field này, tuy nhiên chỉ flag chứ KHÔNG reject hoàn toàn (đánh dấu qua
   data_completeness = "partial" để không làm mất job vốn có description đầy đủ
   nhưng thiếu work_mode — rất phổ biến ở các job ít thông tin cấu trúc).
+
+[Task 4] Validate posted_date:
+- Nếu có posted_date, kiểm tra không phải quá khứ xa (>1 năm so với batch_date).
+- Parser đã chặn tương lai (allow_future=False), nên không cần kiểm tra tương lai
+  ở đây.
 """
 import json
+from datetime import date
 from pathlib import Path
 from typing import NamedTuple
 
@@ -55,6 +61,16 @@ def validate(record: SourceNormalized, registry_entry: dict | None = None) -> Va
         # phát hiện sớm parser thiếu sót, thay vì để lọt vào Gold layer.
         if record.salary_min is None and record.salary_max is None:
             reasons.append("salary_disclosed_but_missing")
+
+    # [Task 4] Validate posted_date: nếu có date thật, kiểm tra không phải quá khứ xa.
+    # Parser đã chặn tương lai (allow_future=False), nên không cần kiểm tra tương lai.
+    if record.posted_date is not None:
+        try:
+            batch = date.fromisoformat(record.batch_date)
+            if (batch - record.posted_date).days > 365:
+                reasons.append("posted_date_too_old")
+        except ValueError:
+            pass
 
     # [FIX P2] Validate locations/work_mode là required — NHƯNG KHÔNG reject.
     # lý do: elt_audit_report chỉ ra 3.1% locations và 7.1% work_mode rỗng,

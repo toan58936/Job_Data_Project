@@ -8,6 +8,7 @@ KHONG them field moi vao core tru khi >=2 nguon cung cung cap + co nhu cau dashb
 """
 from enum import Enum
 from typing import Any, Optional
+from datetime import date
 from pydantic import BaseModel, Field
 
 
@@ -27,12 +28,14 @@ class WorkMode(str, Enum):
 class SourceNormalized(BaseModel):
     job_id: str
     source: str
+    batch_date: str
     url: str
     title: str
     company_name: str
     locations: list[str] = Field(default_factory=list)
     description_raw: str
     posted_date_raw: str
+    posted_date: Optional[date] = None
 
     salary_status: SalaryStatus
     salary_min: Optional[float] = None

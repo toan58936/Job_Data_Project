@@ -30,7 +30,6 @@ from pathlib import Path
 
 from scrapy import signals
 from scrapy.exceptions import CloseSpider
-from scrapy.http import Request
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +76,6 @@ def login_via_playwright(email: str, password: str) -> bool:
             page.goto("https://itviec.com/sign_in", timeout=30000)  # [FIX] URL đúng
             page.wait_for_load_state("networkidle")
 
-            # [FIX] Selector cũ dựa vào tên attribute Rails cũ (user[email]) —
-            # ưu tiên tìm theo label text trước, ổn định hơn nếu site đổi tên field.
             try:
                 email_input = page.get_by_label("Email", exact=False).first
                 email_input.wait_for(timeout=10000)
@@ -273,8 +270,19 @@ class LoginMiddleware:
 
 
 class ForcePlaywrightMiddleware:
-    """Thêm playwright=True vào mọi request của spider topcv_listing và topcv_detail"""
+    """Thêm playwright=True vào mọi request của spider thuộc nguồn cần trình
+    duyệt (requires_browser=True trong SOURCE_REGISTRY).
+
+    [FIX] Trước đây hardcode tên spider: `if spider.name in ["topcv_listing",
+    "topcv_detail"]`. Nguồn mới thêm sau này (đã đúng thiết kế: chỉ cần khai
+    báo trong SOURCE_REGISTRY, không sửa code chung) sẽ KHÔNG tự động được bật
+    Playwright nếu vẫn hardcode kiểu này — vi phạm chính nguyên tắc 2 (capability
+    khai ở registry, code chung chỉ đọc, không rẽ nhánh theo tên). Giờ đọc thẳng
+    registry_entry đã có sẵn trên mọi BaseSpider (self.registry_entry, gán trong
+    BaseSpider.__init__), không cần biết tên nguồn cụ thể là gì."""
+
     def process_request(self, request, spider):
-        if spider.name in ["topcv_listing", "topcv_detail"]:
+        registry_entry = getattr(spider, "registry_entry", {}) or {}
+        if registry_entry.get("requires_browser"):
             request.meta.setdefault("playwright", True)
         return None

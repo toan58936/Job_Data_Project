@@ -116,12 +116,12 @@ bash crawler/scripts/run_all_spiders.sh
 cd crawler
 
 # Crawl listing
-python -m scrapy crawl itviec_listing -a batch_date="2026-08-01" -s LOG_LEVEL=INFO
-python -m scrapy crawl topcv_listing -a batch_date="2026-08-01" -s LOG_LEVEL=INFO
+python -m scrapy crawl itviec_listing -a batch_date="2026-08-06" -s LOG_LEVEL=INFO
+python -m scrapy crawl topcv_listing -a batch_date="2026-08-06" -s LOG_LEVEL=INFO
 
 # Crawl detail
-python -m scrapy crawl itviec_detail -a batch_date="2026-08-01" -s LOG_LEVEL=INFO
-python -m scrapy crawl topcv_detail -a batch_date="2026-08-01" -s LOG_LEVEL=INFO
+python -m scrapy crawl itviec_detail -a batch_date="2026-08-06" -s LOG_LEVEL=INFO
+python -m scrapy crawl topcv_detail -a batch_date="2026-08-06" -s LOG_LEVEL=INFO
 ```
 
 **Output**: `data/raw/{source}/{batch_date}/jobs_meta_listing.jsonl` + `jobs_meta_detail_status.jsonl` + `raw_html/`

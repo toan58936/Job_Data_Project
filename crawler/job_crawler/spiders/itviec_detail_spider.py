@@ -2,6 +2,22 @@
 
 Đọc file jobs_meta_listing.jsonl, lấy title và company_name từ đó,
 và lưu vào item detail để file jobs_meta_detail_status.jsonl có đầy đủ metadata.
+
+[SỬA — trước] Bỏ start_urls, dùng start_requests() thay vì parse() đọc response
+không dùng tới — tránh lãng phí 1 request khởi động.
+
+[SỬA — mới] Thêm errback=self.handle_request_failure cho mỗi request detail.
+
+[SỬA — quan trọng nhất, batch 2026-08-06] `def start_requests(self):` (kiểu cũ)
+KHÔNG được Scrapy 2.17 gọi trong project này — xác nhận qua log thật: không có
+bất kỳ dòng nào bên trong hàm được thực thi (không "Đã tạo X request", không cả
+"Không tìm thấy file listing"), và cũng KHÔNG có ScrapyDeprecationWarning nhắc
+tới start_requests (trong khi warning khác vẫn hiện bình thường) — nghĩa là
+Scrapy coi spider này như KHÔNG override gì cả, rơi về hành vi mặc định (đọc
+start_urls, mà start_urls không được định nghĩa -> rỗng -> 0 request, im lặng
+hoàn toàn). itviec_listing_spider.py dùng `async def start()` (API mới, thêm từ
+Scrapy 2.13) và chạy đúng — đổi theo đúng API đó, không dùng start_requests()
+kiểu cũ nữa trong toàn bộ project này.
 """
 import json
 import logging
@@ -25,9 +41,7 @@ class ItviecDetailSpider(BaseSpider):
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
     }
 
-    start_urls = ["https://itviec.com/it-jobs"]
-
-    def parse(self, response):
+    async def start(self):
         listing_path = PROJECT_ROOT / "data" / "raw" / self.source_name / self.batch_date / "jobs_meta_listing.jsonl"
         status_path = PROJECT_ROOT / "data" / "raw" / self.source_name / self.batch_date / "jobs_meta_detail_status.jsonl"
 
@@ -69,6 +83,7 @@ class ItviecDetailSpider(BaseSpider):
                     yield scrapy.Request(
                         url=url,
                         callback=self.parse_detail,
+                        errback=self.handle_request_failure,
                         meta={
                             "job_id": job_id,
                             "title": title,

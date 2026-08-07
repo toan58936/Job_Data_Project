@@ -67,8 +67,6 @@ def _merge_records(master: JobPosting, duplicate: JobPosting) -> JobPosting:
     """Hợp nhất dữ liệu: Master nuốt trọn Skills/Locations của Duplicate."""
     # Gộp tập kỹ năng (Loại bỏ trùng lặp bằng set)
     master.job_skills = list(set(master.job_skills + duplicate.job_skills))
-    master.job_expertise = list(set(master.job_expertise + duplicate.job_expertise))
-    master.job_domains = list(set(master.job_domains + duplicate.job_domains))
 
     # Gộp địa điểm
     master.locations = list(set(master.locations + duplicate.locations))

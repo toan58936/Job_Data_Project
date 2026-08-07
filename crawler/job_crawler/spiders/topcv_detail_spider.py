@@ -2,6 +2,11 @@
 
 Đọc file jobs_meta_listing.jsonl, lấy title và company_name từ đó,
 và lưu vào item detail để file jobs_meta_detail_status.jsonl có đầy đủ metadata.
+
+[SỬA] Đổi start_requests() (kiểu cũ, không được Scrapy 2.17 gọi trong project
+này — xem giải thích chi tiết trong itviec_detail_spider.py) sang async def
+start() (API mới từ Scrapy 2.13), giống itviec_detail_spider.py và
+itviec_listing_spider.py.
 """
 import json
 import logging
@@ -25,9 +30,7 @@ class TopcvDetailSpider(BaseSpider):
         "CONCURRENT_REQUESTS_PER_DOMAIN": 2,
     }
 
-    start_urls = ["https://www.topcv.vn/"]
-
-    def parse(self, response):
+    async def start(self):
         listing_path = PROJECT_ROOT / "data" / "raw" / self.source_name / self.batch_date / "jobs_meta_listing.jsonl"
         status_path = PROJECT_ROOT / "data" / "raw" / self.source_name / self.batch_date / "jobs_meta_detail_status.jsonl"
 
@@ -69,6 +72,7 @@ class TopcvDetailSpider(BaseSpider):
                     yield scrapy.Request(
                         url=url,
                         callback=self.parse_detail,
+                        errback=self.handle_request_failure,
                         meta={
                             "job_id": job_id,
                             "title": title,

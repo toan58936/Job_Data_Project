@@ -89,8 +89,6 @@ def test_itviec_parse_adds_posted_date_parsed(monkeypatch):
             "salary_max": None,
             "source_extra": {
                 "skills_raw": ["Python"],
-                "job_expertise_raw": [],
-                "job_domain_raw": [],
             },
         },
     )
