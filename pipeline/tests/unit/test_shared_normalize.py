@@ -78,6 +78,13 @@ def test_normalize_locations_english_variants():
     assert normalize_locations(raw) == expected
 
 
+def test_normalize_locations_special_values():
+    """[P3] Giá trị đặc biệt như Toàn quốc, Remote, Overseas phải được chuẩn hóa."""
+    raw = ["Toàn quốc", "All Vietnam", "Remote", "Overseas"]
+    expected = ["All", "Remote", "Overseas"]
+    assert normalize_locations(raw) == expected
+
+
 def test_normalize_keeps_existing_posted_date():
     """[Task 4] Nếu parser đã parse posted_date, normalize không ghi đè."""
     rec = SourceNormalized(

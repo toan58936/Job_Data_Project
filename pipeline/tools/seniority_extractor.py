@@ -75,7 +75,10 @@ def _find_highest_level(text: str) -> Optional[str]:
     return None
 
 
-def extract_seniority(title: str, description_raw: str = "") -> Optional[str]:
+from pipeline.tools.vocab_gap_logger import log_unrecognized_role
+
+
+def extract_seniority(title: str, description_raw: str = "", source: Optional[str] = None, job_id: Optional[str] = None) -> Optional[str]:
     """
     Phân loại seniority từ title (và tuỳ chọn description).
 
@@ -98,6 +101,7 @@ def extract_seniority(title: str, description_raw: str = "") -> Optional[str]:
         if level:
             return level
 
+    log_unrecognized_role(title, source=source or "unknown", job_id=job_id or "unknown")
     return None
 
 

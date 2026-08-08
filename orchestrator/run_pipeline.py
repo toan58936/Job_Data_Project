@@ -20,8 +20,24 @@ try:
     from shared.source_registry import SOURCE_REGISTRY
 except ImportError:
     SOURCE_REGISTRY = {
-        "itviec": {"skill_tag_structure": "flat"},
-        "topcv": {"skill_tag_structure": "grouped"}
+        "itviec": {
+            "requires_browser": True,
+            "has_ajax_preview": True,
+            "has_json_data_layer": True,
+            "provides_skill_tags": True,
+            "skill_tag_structure": "flat",
+            "salary_can_be_gated": True,
+            "id_strategy": "url_slug",
+        },
+        "topcv": {
+            "requires_browser": True,
+            "has_ajax_preview": False,
+            "has_json_data_layer": False,
+            "provides_skill_tags": True,
+            "skill_tag_structure": "grouped",
+            "salary_can_be_gated": False,
+            "id_strategy": "numeric_path",
+        },
     }
 
 

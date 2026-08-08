@@ -113,6 +113,10 @@ _EXTRA_PATTERNS: dict[str, str] = {
     r"\bdn\b": "Đà Nẵng",
     r"\bhp\b": "Hải Phòng",
     r"\bct\b": "Cần Thơ",
+    # Special non-province location values — map về canonical tag
+    r"\btoan\s+quoc\b|\ball\s+vietnam\b|\ball\s+country\b": "All",
+    r"\bremote\b": "Remote",
+    r"\boverseas\b": "Overseas",
 }
 
 # Build LOCATION_MAP (giữ tên cũ để tương thích nếu nơi khác import).

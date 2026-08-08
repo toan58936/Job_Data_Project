@@ -57,6 +57,11 @@ def _salary_compatible(job1: JobPosting, job2: JobPosting, max_diff_ratio: float
     m1 = _mid(job1)
     m2 = _mid(job2)
     if m1 is None or m2 is None:
+        # [FIX P2] Nếu cả 2 đều thiếu lương, dùng seniority_level làm tín hiệu phụ:
+        # 2 job cùng title/company nhưng khác seniority (junior vs senior) → không gộp.
+        if job1.seniority_level and job2.seniority_level:
+            if job1.seniority_level != job2.seniority_level:
+                return False
         return True  # Thiếu dữ liệu lương → không sử dụng tín hiệu này
     if m1 == 0 or m2 == 0:
         return True

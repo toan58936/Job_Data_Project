@@ -53,6 +53,7 @@ def store_to_parquet(records: List[JobPosting], batch_date: str, data_root: Path
 GOLD_ANALYZABLE_COLUMNS = [
     "job_id",
     "source",
+    "batch_date",
     "title",
     "company_name",
     "locations",

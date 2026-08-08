@@ -11,6 +11,7 @@ class JobPosting(BaseModel):
     # === IDENTITY ===
     job_id: str                            # Định danh duy nhất (vd: itviec__2329)
     source: str                            # Nguồn gốc (itviec, topcv...)
+    batch_date: str                        # Ngày batch crawl (YYYY-MM-DD)
     url: str                               # Đường dẫn chi tiết tuyển dụng
 
     # === JOB CORE ===

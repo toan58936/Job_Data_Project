@@ -4,7 +4,7 @@ from pipeline.tools.skill_extractor import extract_skills
 from pipeline.tools.seniority_extractor import extract_seniority
 from pipeline.tools.role_extractor import extract_role
 from shared.source_registry import SOURCE_REGISTRY
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def enrich(record: SourceNormalized) -> JobPosting:
@@ -20,20 +20,31 @@ def enrich(record: SourceNormalized) -> JobPosting:
     # Lấy data_completeness từ bước validate (mặc định 'full' nếu lỡ sót)
     data_completeness = record.source_extra.get("data_completeness", "full")
 
-    # Phân loại seniority từ title (fallback description)
-    seniority_level = extract_seniority(record.title, record.description_raw)
+    # Phân loại seniority từ title (fallback description).
+    # Chỉ lấy 500 ký tự đầu của description để tránh false positive
+    # (VD: "experience working with senior stakeholders" trong description
+    # không phải là level của job).
+    seniority_level = extract_seniority(
+        record.title,
+        record.description_raw[:500] if record.description_raw else "",
+        source=record.source,
+        job_id=record.job_id,
+    )
 
     # Chuẩn hóa vai trò công việc (canonical job_role) từ title,
     # fallback sang requirements_raw (TopCV không có expertise nhưng có requirements).
     job_role = extract_role(
         record.title,
         record.source_extra.get("requirements_raw", ""),
+        source=record.source,
+        job_id=record.job_id,
     )
 
     # 2. Map sang Schema Golden Record (JobPosting)
     return JobPosting(
         job_id=record.job_id,
         source=record.source,
+        batch_date=record.batch_date,
         url=record.url,
         title=record.title,
         company_name=record.company_name,
@@ -54,7 +65,7 @@ def enrich(record: SourceNormalized) -> JobPosting:
         job_skills=extracted_skills,
 
         posted_date=record.posted_date.isoformat() if record.posted_date else None,
-        crawled_at=datetime.utcnow().isoformat(),
+        crawled_at=datetime.now(timezone.utc).isoformat(),
 
         listing_position=record.listing_position,
         data_completeness=data_completeness,

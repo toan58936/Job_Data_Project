@@ -40,6 +40,7 @@ _RELATIVE_PATTERN = re.compile(
 )
 
 _ABSOLUTE_PATTERN = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+_ISO_PATTERN = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
 
 
 def parse_relative_vietnamese(text: str, reference_date: date) -> Optional[date]:
@@ -85,6 +86,22 @@ def parse_absolute_vietnamese(text: str) -> Optional[date]:
         return None
 
 
+def parse_iso_date(text: str) -> Optional[date]:
+    """"2026-08-07" (yyyy-mm-dd, ISO 8601) -> date. Trả về None nếu không khớp
+    hoặc ngày không hợp lệ."""
+    if not text:
+        return None
+    match = _ISO_PATTERN.search(text.strip())
+    if not match:
+        return None
+
+    year, month, day = (int(g) for g in match.groups())
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 def parse_vietnamese_date(text: str, reference_date: date, allow_future: bool = False) -> Optional[date]:
     """Điểm vào chính — thử tuyệt đối trước (rẻ, không mơ hồ), rồi mới thử
     tương đối. Dùng hàm này ở pipeline_steps/ thay vì gọi trực tiếp 2 hàm con,
@@ -97,6 +114,13 @@ def parse_vietnamese_date(text: str, reference_date: date, allow_future: bool = 
     luôn ở tương lai) vào posted_date_raw — allow_future=False sẽ chặn case này,
     tránh ghi ngày đăng trong tương lai (audit anomaly #9). Với field thật sự là
     ngày tương lai (application_deadline) thì truyền allow_future=True."""
+    # Thử ISO 8601 (yyyy-mm-dd) trước, rồi đến dd/mm/yyyy, rồi cuối cùng là tương đối.
+    iso_date = parse_iso_date(text)
+    if iso_date is not None:
+        if not allow_future and iso_date > reference_date:
+            return None
+        return iso_date
+
     absolute = parse_absolute_vietnamese(text)
     if absolute is not None:
         if not allow_future and absolute > reference_date:

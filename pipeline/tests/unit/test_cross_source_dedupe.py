@@ -13,6 +13,7 @@ def _make_posting(job_id, title, company, salary_min, salary_max, description="d
     return JobPosting(
         job_id=job_id,
         source="itviec",
+        batch_date="2026-08-06",
         url=f"https://itviec.com/jobs/{job_id}",
         title=title,
         company_name=company,
@@ -53,6 +54,24 @@ def test_salary_compatible_true_when_one_side_missing():
     a = _make_posting("a3", "Software Engineer", "Viettel", 15.0, 20.0)
     b = _make_posting("b3", "Software Engineer", "Viettel", None, None)
     assert _salary_compatible(a, b) is True
+
+
+def test_salary_compatible_false_when_no_salary_different_seniority():
+    """[FIX P2] Cả 2 không có lương nhưng seniority khác nhau → KHÔNG gộp."""
+    junior = _make_posting("j3", "Software Engineer", "Viettel", None, None)
+    junior.seniority_level = "junior"
+    senior = _make_posting("s3", "Software Engineer", "Viettel", None, None)
+    senior.seniority_level = "senior"
+    assert _salary_compatible(junior, senior) is False
+
+
+def test_salary_compatible_true_when_no_salary_same_seniority():
+    """[FIX P2] Cả 2 không có lương và cùng seniority → tương thích."""
+    mid1 = _make_posting("m1", "Software Engineer", "Viettel", None, None)
+    mid1.seniority_level = "middle"
+    mid2 = _make_posting("m2", "Software Engineer", "Viettel", None, None)
+    mid2.seniority_level = "middle"
+    assert _salary_compatible(mid1, mid2) is True
 
 
 def test_deduplicate_keeps_same_company_different_salary():

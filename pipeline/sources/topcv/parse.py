@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Optional
 from datetime import datetime 
@@ -6,6 +7,33 @@ from lxml import html
 from pipeline.model.raw_record import RawRecord
 from pipeline.model.source_normalized import SalaryStatus, SourceNormalized, WorkMode
 from pipeline.tools.date_parser import parse_vietnamese_date
+
+logger = logging.getLogger(__name__)
+
+
+def _check_parse_hit_rate(job_id: str, source: str, data: dict[str, Any]) -> None:
+    """[FIX P3] Log cảnh báo khi parser trích xuất được ít hơn 50% core fields.
+    
+    Core fields: title, company_name, locations, description_raw, work_mode.
+    Nếu hit rate < 50% → có thể HTML đã thay đổi hoàn toàn, cần review parser.
+    """
+    core_fields = ["title", "company_name", "locations", "description_raw", "work_mode"]
+    extracted = 0
+    for field in core_fields:
+        value = data.get(field)
+        if field == "locations":
+            if value and len(value) > 0:
+                extracted += 1
+        elif value and str(value).strip():
+            extracted += 1
+    
+    hit_rate = extracted / len(core_fields)
+    if hit_rate < 0.5:
+        logger.warning(
+            "Low parse hit rate for %s job %s: %.0f%% (%d/%d core fields extracted). "
+            "Possible HTML structure change.",
+            source, job_id, hit_rate * 100, extracted, len(core_fields)
+        )
 
 # TopCV job pages không có <meta charset="utf-8">, nên lxml phải tự đoán encoding.
 # Khi input là bytes (ví dụ đọc lại raw HTML từ Bronze storage), việc đoán sai encoding
@@ -364,7 +392,7 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         **header_info,  
     }
 
-    return {
+    result = {
         "title": title,
         "company_name": company_name,
         "locations": locations,
@@ -375,13 +403,15 @@ def _parse_detail(raw: RawRecord) -> dict[str, Any]:
         "salary_max": None, # Reset về None để Pipeline xử lý
         "source_extra": source_extra,
     }
+    _check_parse_hit_rate(raw.job_id, raw.source, result)
+    return result
 
 
 def _parse_listing(raw: RawRecord) -> dict[str, Any]:
     company_name = ""
     title = raw.title_listing or ""
     posted_date_raw = _parse_listing_posted_date(raw.raw_html_listing) if raw.raw_html_listing else ""
-    return {
+    result = {
         "title": title,
         "company_name": company_name,
         "locations": [],
@@ -398,6 +428,8 @@ def _parse_listing(raw: RawRecord) -> dict[str, Any]:
             "skills_industry_raw": [],
         },
     }
+    _check_parse_hit_rate(raw.job_id, raw.source, result)
+    return result
 
 
 def parse(raw: RawRecord) -> SourceNormalized:

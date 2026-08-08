@@ -41,6 +41,10 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
         r"\btrưởng\s+nhóm\s+dữ\s+liệu\b",
         r"\blead\s+data\s+engineer\b",
     ],
+    "business_analyst": [
+        r"\bbusiness\s+analyst\b",
+        r"\bchuyên\s+viên\s+phân\s+tích\s+nghiệp\s+vụ\b",
+    ],
     "data_analyst": [
         r"\bdata\s+analyst\b",
         r"\bbusiness\s+intelligence\s+analyst\b",
@@ -170,8 +174,6 @@ _ROLE_PATTERNS: dict[str, list[str]] = {
     ],
     "technical_writer": [
         r"\btechnical\s+writer\b",
-        r"\bbusiness\s+analyst\b",
-        r"\bchuyên\s+viên\s+phân\s+tích\s+nghiệp\s+vụ\b",
     ],
     "support_engineer": [
         r"\bsupport\s+engineer\b",
@@ -206,7 +208,10 @@ def _find_role(text: str) -> Optional[str]:
     return None
 
 
-def extract_role(title: str, requirements_text: Optional[str] = None) -> Optional[str]:
+from pipeline.tools.vocab_gap_logger import log_unrecognized_role
+
+
+def extract_role(title: str, requirements_text: Optional[str] = None, source: Optional[str] = None, job_id: Optional[str] = None) -> Optional[str]:
     """
     Chuẩn hóa vai trò công việc từ title (và tuỳ chọn requirements_text).
 
@@ -214,6 +219,8 @@ def extract_role(title: str, requirements_text: Optional[str] = None) -> Optiona
         title: Tiêu đề công việc (VD: "Senior Data Engineer", "Chuyên viên phân tích dữ liệu").
         requirements_text: Text yêu cầu ứng viên (từ source_extra.requirements_raw) —
                            dùng làm fallback khi title không có tín hiệu.
+        source: Nguồn gốc job (để log vocab gap).
+        job_id: Định danh job (để log vocab gap).
 
     Returns:
         Một trong các canonical role (data_engineer, data_analyst, ...), hoặc None.
@@ -229,6 +236,7 @@ def extract_role(title: str, requirements_text: Optional[str] = None) -> Optiona
         if role:
             return role
 
+    log_unrecognized_role(title, source=source or "unknown", job_id=job_id or "unknown")
     return None
 
 
